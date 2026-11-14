@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BriefPilot · 澄清与确认</title><link rel="stylesheet" href="styles.css?v=6"><link rel="stylesheet" href="workspace.css"><link rel="icon" href="data:,">
+</head>
+<body class="work-page">
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="BriefPilot 首页">BriefPilot<span class="brand-dot">·</span></a>
+    <ol class="steps" aria-label="工作流程">
+      <li class="done"><a href="index.html"><span class="step-number">1</span><span>采集需求<small>Capture</small></span></a></li>
+      <li class="active" aria-current="step"><a href="clarify.html"><span class="step-number">2</span><span>澄清与确认<small>Clarify</small></span></a></li>
+      <li><a href="deliver.html"><span class="step-number">3</span><span>生成交付物<small>Deliver</small></span></a></li>
+    </ol>
+    <span class="prototype-tag" id="mode-tag">正在读取运行模式</span>
+  </header>
+  <main class="work-main">
+    <section class="work-heading">
+      <div><p class="eyebrow" id="mode-eyebrow">02 / CLARIFY</p><h1>澄清并确认 Brief</h1><p>核对来源，处理关键问题，再由你决定何时确认当前版本。</p></div>
+      <div class="heading-status"><span class="status-dot"></span><div><strong id="brief-version">正在载入工作状态…</strong><small id="save-state">本地测试模式 · 未调用 AI</small></div></div>
+    </section>
+
+    <section class="clarify-layout">
+      <div class="brief-panel panel">
+        <header class="panel-head"><div><span class="panel-kicker">结构化 Brief</span><h2 id="brief-title">等待 Capture 数据</h2></div><span class="summary-line"><b id="confirmed-count">0 / 7</b> 项已核实</span></header>
+        <div class="brief-groups">
+          <section class="brief-group">
+            <header><div><span class="group-index">01</span><h3>活动基础信息</h3></div><span>2 项</span></header>
+            <div class="brief-row"><label for="product">产品</label><input id="product" data-field="product"><span class="source" id="source-product">—</span><span class="verify" id="verify-product">—</span><details class="evidence" id="evidence-product" hidden><summary>原文依据</summary><p id="excerpt-product"></p></details></div>
+            <div class="brief-row"><label for="goal">营销目标</label><input id="goal" class="critical-field" data-field="campaign_goal"><span class="source" id="source-campaign_goal">—</span><span class="verify" id="verify-campaign_goal">—</span><details class="evidence" id="evidence-campaign_goal" hidden><summary>原文依据</summary><p id="excerpt-campaign_goal"></p></details></div>
+          </section>
+          <section class="brief-group">
+            <header><div><span class="group-index">02</span><h3>目标受众与传播信息</h3></div><span>3 项</span></header>
+            <div class="brief-row"><label for="audience">目标受众</label><input id="audience" class="critical-field" data-field="audience"><span class="source" id="source-audience">—</span><span class="verify" id="verify-audience">—</span><details class="evidence" id="evidence-audience" hidden><summary>原文依据</summary><p id="excerpt-audience"></p></details></div>
+            <div class="brief-row"><label for="message">核心信息</label><input id="message" class="critical-field" data-field="key_message"><span class="source" id="source-key_message">—</span><span class="verify" id="verify-key_message">—</span><details class="evidence" id="evidence-key_message" hidden><summary>原文依据</summary><p id="excerpt-key_message"></p></details></div>
+            <div class="brief-row"><label for="market-clarify">目标市场</label><input id="market-clarify" class="critical-field" data-field="region"><span class="source" id="source-region">—</span><span class="verify" id="verify-region">—</span><details class="evidence" id="evidence-region" hidden><summary>原文依据</summary><p id="excerpt-region"></p></details></div>
+          </section>
+          <section class="brief-group">
+            <header><div><span class="group-index">03</span><h3>执行要求与限制</h3></div><span>3 项</span></header>
+            <div class="brief-row"><label for="channels">主要渠道</label><input id="channels" readonly aria-readonly="true"><span class="source user-source">Capture 配置</span><span class="verify pending">待核对</span></div>
+            <div class="brief-row"><label for="tone">表达语气</label><input id="tone" data-field="tone"><span class="source" id="source-tone">—</span><span class="verify" id="verify-tone">—</span></div>
+            <div class="brief-row"><label for="constraints">内容限制</label><input id="constraints" data-field="constraints"><span class="source" id="source-constraints">—</span><span class="verify" id="verify-constraints">—</span></div>
+          </section>
+        </div>
+        <div id="impact-bar" class="impact-bar" hidden><div><strong>变更影响提示</strong><p id="impact-copy">关键字段已修改；后续生成内容需要使用保存后的新版本。</p></div><button type="button" class="text-button" id="review-impact">查看影响</button></div>
+        <footer class="panel-actions"><span id="clarify-feedback">正在连接本地工作状态…</span><div><button type="button" class="button secondary" id="save-draft">保存草稿</button><button type="button" class="button secondary" id="confirm-brief">确认当前 Brief</button><button type="button" class="button primary compact-primary" id="enter-deliver" disabled>生成测试交付物并进入</button></div></footer>
+      </div>
+
+      <aside class="question-panel panel">
+        <header class="panel-head"><div><span class="panel-kicker">澄清区 · 最多 3 项</span><h2>优先澄清问题</h2></div><span class="question-count" id="question-count">正在载入</span></header>
+        <p class="panel-intro">记录回答不会直接修改 Brief。只有点击“应用建议”后，字段值才会变化。</p>
+        <div class="questions" id="questions"></div>
+      </aside>
+    </section>
+  </main>
+  <dialog id="confirm-dialog"><div class="dialog-kicker">人工确认 · 本地工作状态</div><h2>确认当前 Brief？</h2><p>仍有 <strong id="unresolved-count">0</strong> 项未解决。确认表示你认可当前已保存版本可继续使用，不代表客户批准，也不代表其中声明已完成事实核实。</p><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-confirm">返回检查</button><button type="button" class="button primary" id="complete-confirm">继续确认</button></div></dialog>
+  <dialog id="impact-dialog"><div class="dialog-kicker">Change Impact Review</div><h2>关键字段已经变化</h2><p>营销目标、目标市场、目标受众或核心信息保存变更后，Python 后端会保留现有交付物，并将受影响的 current 稿标记为 stale、提示重新审核。</p><button type="button" class="button primary" id="close-impact">知道了</button></dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="clarify.js?v=5"></script>
+</body>
+</html>

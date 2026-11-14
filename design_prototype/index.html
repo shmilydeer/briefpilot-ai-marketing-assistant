@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BriefPilot · 采集需求</title><link rel="stylesheet" href="styles.css?v=6"><link rel="icon" href="data:,">
+  <style>
+    /* Final readability pass, kept explicit for visual baseline review. */
+    .intro{padding-top:38px;padding-bottom:30px}
+    .subtitle,textarea{font-size:14px}.subtitle{color:#70768a}
+    textarea::placeholder{color:#858197}
+    .field label,.field legend,.field select,.primary{font-size:13px}
+    .channel{font-size:13px!important}
+    .section-kicker,.editor-footer,.action-note p,footer{font-size:11px;color:#80798e}
+    .field label>span:not(.checkmark),.field legend>span,.language>span,.language p{color:#827a92}
+    .secondary{font-size:13px}.action-note strong{font-size:13px}
+    .integration-dialog{width:min(680px,calc(100vw - 32px));padding:32px}
+    .integration-dialog .dialog-kicker{color:#6058d8}
+    .fixture-notice{margin:12px 0 20px;padding:12px 14px;border:1px solid #e4e0ff;border-radius:12px;background:#f7f5ff;color:#625b78;font-size:12px;line-height:1.6}
+    .result-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}
+    .result-grid div{display:block;padding:12px 14px;border:1px solid #ebe9f2;border-radius:12px;background:#fbfbfd}
+    .result-grid dt{margin-bottom:5px;color:#827a92;font-size:11px}
+    .result-grid dd{margin:0;color:#202333;font-size:13px;line-height:1.45}
+    .integration-dialog .dialog-note{margin:0 0 20px}
+    .integration-dialog .primary{width:100%}
+    @media(max-width:640px){.result-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="BriefPilot 首页">BriefPilot<span class="brand-dot">·</span></a>
+    <ol class="steps" aria-label="工作流程">
+      <li class="active" aria-current="step"><a href="index.html"><span class="step-number">1</span><span>采集需求<small>Capture</small></span></a></li>
+      <li><a href="clarify.html"><span class="step-number">2</span><span>澄清与确认<small>Clarify</small></span></a></li>
+      <li><a href="deliver.html"><span class="step-number">3</span><span>生成交付物<small>Deliver</small></span></a></li>
+    </ol>
+    <span class="prototype-tag" id="mode-tag">本地测试 API · 固定响应</span>
+  </header>
+  <main>
+    <section class="intro">
+      <div class="intro-copy"><p class="eyebrow">从原始需求，到清晰共识</p><h1>让每一份营销需求，<br>都有<span>清晰的起点。</span></h1><p class="subtitle">保留客户原话，梳理关键信息。<br>让值得确认的问题，在创意开始前被看见。</p></div>
+      <aside class="principle" aria-label="产品原则"><span class="principle-index">01 / CAPTURE</span><p>好创意，<br>始于被理解的需求。</p><div class="principle-rule"></div><span>有据可循 &nbsp; · &nbsp; 人工确认 &nbsp; · &nbsp; 一致交付</span></aside>
+    </section>
+    <section class="workspace" aria-labelledby="brief-heading">
+      <form id="capture-form">
+        <div class="card-heading"><div><div class="section-kicker">你的需求，从这里开始</div><h2 id="brief-heading">客户原始需求</h2></div><button type="button" id="sample" class="button secondary">填入虚构示例 <span aria-hidden="true">↗</span></button></div>
+        <div class="editor"><label for="brief" class="sr-only">客户原始需求</label><textarea id="brief" placeholder="粘贴客户邮件、会议纪要，或直接描述这次营销需求……&#10;&#10;例如：我们计划在英国推广一款新品，希望通过 TikTok 触达年轻消费者。"></textarea><div class="editor-footer"><span>支持中文、英文或混合输入</span><span id="count">0 字</span></div></div>
+        <div class="configuration">
+          <div class="field market"><label for="market">目标市场 <span>在哪里开展传播</span></label><select id="market"><option value="unknown">待识别 · 从需求中确认</option><option value="UK">英国（UK）</option><option value="US">美国（US）</option></select></div>
+          <fieldset class="field channels"><legend>传播渠道 <span>可多选</span></legend><div class="channel-options"><label class="channel"><input type="checkbox" name="channel" value="TikTok" checked><span class="checkmark" aria-hidden="true"></span>TikTok</label><label class="channel"><input type="checkbox" name="channel" value="Instagram" checked><span class="checkmark" aria-hidden="true"></span>Instagram</label></div></fieldset>
+          <div class="field language"><label for="run-mode">运行模式 <span>正文为英文</span></label><select id="run-mode"><option value="local_fixture">固定测试 · 不调用 AI</option><option value="live_ai">实时 AI · 可能产生费用</option></select></div>
+        </div>
+        <div class="action-row"><div class="action-note"><strong>先理解，再生成。</strong><p>下一步将整理 Brief，并交由你澄清与确认。</p></div><button class="button primary" type="submit">分析需求 <span aria-hidden="true">→</span></button></div>
+        <p id="feedback" role="status" aria-live="polite" hidden></p>
+      </form>
+    </section>
+    <footer><span>客户提供的信息不等于事实已核实。重要声明仍需人工检查。</span><span>为清晰的协作而设计 <b>BriefPilot</b></span></footer>
+  </main>
+  <dialog id="demo" class="integration-dialog"><div class="dialog-kicker">本地测试 API · 固定虚构数据</div><h2>已收到结构化 Brief</h2><p id="fixture-notice" class="fixture-notice"></p><dl class="result-grid"><div><dt>产品</dt><dd id="result-product"></dd></div><div><dt>目标市场</dt><dd id="result-region"></dd></div><div><dt>营销目标</dt><dd id="result-goal"></dd></div><div><dt>核心受众</dt><dd id="result-audience"></dd></div><div><dt>核心信息</dt><dd id="result-message"></dd></div><div><dt>传播渠道</dt><dd id="result-channels"></dd></div></dl><p class="dialog-note"><strong>仍待确认：</strong><span id="result-missing"></span><br>以上数据来自本地 API 的固定测试夹具，不代表真实 AI 解析；后续 Clarify 与 Deliver 状态由同一 Python 会话继续管理。</p><button type="button" class="button primary" id="close-demo">返回编辑</button></dialog>
+  <script src="script.js?v=5"></script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BriefPilot · 生成与审核交付物</title><link rel="stylesheet" href="styles.css?v=6"><link rel="stylesheet" href="workspace.css"><link rel="icon" href="data:,">
+</head>
+<body class="work-page deliver-page">
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="BriefPilot 首页">BriefPilot<span class="brand-dot">·</span></a>
+    <ol class="steps" aria-label="工作流程">
+      <li class="done"><a href="index.html"><span class="step-number">1</span><span>采集需求<small>Capture</small></span></a></li>
+      <li class="done"><a href="clarify.html"><span class="step-number">2</span><span>澄清与确认<small>Clarify</small></span></a></li>
+      <li class="active" aria-current="step"><a href="deliver.html"><span class="step-number">3</span><span>生成交付物<small>Deliver</small></span></a></li>
+    </ol>
+    <span class="prototype-tag" id="mode-tag">正在读取运行模式</span>
+  </header>
+  <main class="work-main">
+    <section class="work-heading deliver-heading">
+      <div><p class="eyebrow" id="mode-eyebrow">03 / DELIVER</p><h1>生成与审核交付物</h1><p id="deliver-subtitle">读取生成时的 Brief 与澄清快照，保留审核、风险和版本状态。</p></div>
+      <div class="deliver-controls"><div class="heading-status"><span class="status-dot"></span><div><strong id="brief-status">正在载入交付状态…</strong><small id="package-state">本地测试模式</small></div></div><label class="review-select">历史稿<select id="package-history" aria-label="选择历史交付物"></select></label><button type="button" class="button secondary" id="generate-deliver">生成新测试稿</button></div>
+    </section>
+
+    <section class="deliver-shell panel">
+      <div id="deliver-blocker" class="stale-banner" hidden><div><strong>当前不能生成正式工作交付物</strong><p id="blocker-copy"></p></div><a class="text-button" href="clarify.html">返回澄清与确认</a></div>
+      <div id="stale-banner" class="stale-banner" hidden><div><strong>这组交付物需要复审</strong><p id="stale-reason"></p></div><span class="version-chip">旧稿已保留</span></div>
+      <nav class="deliver-tabs" aria-label="交付物类型" role="tablist">
+        <button type="button" role="tab" aria-selected="true" aria-controls="marketing" id="tab-marketing" data-tab="marketing"><span>01</span><strong>营销简报</strong><small>Marketing Brief</small></button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="clarification" id="tab-clarification" data-tab="clarification"><span>02</span><strong>客户澄清表</strong><small>Clarification Sheet</small></button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="handoff" id="tab-handoff" data-tab="handoff"><span>03</span><strong>创意交接稿</strong><small>Creative Handoff</small></button>
+      </nav>
+
+      <section class="deliver-content active" id="marketing" role="tabpanel" aria-labelledby="tab-marketing">
+        <header class="content-head"><div><span class="panel-kicker" id="marketing-kicker">等待交付物</span><h2 id="marketing-title">尚未生成营销简报</h2></div><label class="review-select">内部审核状态<select id="review-status"><option>草稿 — 未审核</option><option>需要修改</option><option>内部审核完成</option></select></label></header>
+        <div class="marketing-grid">
+          <article class="brief-document">
+            <div class="document-lead"><div><span id="data-source-label">等待运行模式</span><h3 id="lead-message">等待生成</h3><p id="lead-summary">等待交付物数据。</p></div><span class="version-chip" id="marketing-version">—</span></div>
+            <div class="brief-facts"><div><span>营销目标</span><strong id="fact-goal">—</strong></div><div><span>目标市场</span><strong id="fact-region">—</strong></div><div><span>核心受众</span><strong id="fact-audience">—</strong></div></div>
+            <div class="brief-points"><div><span>核心信息</span><p id="point-message">—</p></div><div><span>表达边界</span><p id="point-constraints">—</p></div><div><span>主要渠道</span><p id="point-channels">—</p></div></div>
+          </article>
+          <aside class="delivery-rail"><section><span class="rail-label">交付物状态</span><div class="status-row"><span class="current-dot"></span><strong id="rail-current">—</strong></div><dl><div><dt>来源版本</dt><dd id="rail-version">—</dd></div><div><dt>内容修订</dt><dd id="rail-content-version">—</dd></div><div><dt>审核状态</dt><dd id="rail-review">—</dd></div><div><dt>用途</dt><dd>内部创意评审</dd></div></dl></section><section class="risk-card"><span class="rail-label" id="risk-count">未解决事项</span><div id="risk-items"></div><small>这些事项来自生成快照，会随导出保留，不会被视为已确认。</small></section></aside>
+        </div>
+        <div class="review-notes"><article><span>事实边界</span><strong>不补写未提供声明</strong><p>固定测试稿不包含认证、折扣、销量或客户批准状态。</p></article><article><span>版本一致性</span><strong id="version-note">等待交付物快照</strong><p>关键字段变化后，后端保留旧稿并标记 stale。</p></article><article><span>人工审核</span><strong>内部审核不等于客户批准</strong><p>审核状态只绑定当前内容修订。</p></article></div>
+      </section>
+
+      <section class="deliver-content" id="clarification" role="tabpanel" aria-labelledby="tab-clarification" hidden>
+        <header class="content-head"><div><span class="panel-kicker">生成时的澄清快照</span><h2>客户澄清表</h2></div><span class="version-chip" id="clarification-version">—</span></header>
+        <div class="clarification-sheet" id="clarification-sheet"></div>
+        <div class="sheet-note"><strong>如实反映处理状态</strong><p>暂缓和未解决问题不会因为 Brief 已确认而消失，也不会被自动标记为客户批准。</p></div>
+      </section>
+
+      <section class="deliver-content" id="handoff" role="tabpanel" aria-labelledby="tab-handoff" hidden>
+        <header class="content-head"><div><span class="panel-kicker" id="handoff-kicker">创意制作输入</span><h2>社媒内容工作稿</h2></div><span class="review-badge" id="handoff-review">—</span></header>
+        <div class="channel-drafts" id="channel-drafts"></div>
+        <div class="handoff-notes"><article><span>生成模式</span><strong id="generation-label">等待交付物</strong><p id="generation-copy">运行模式将由服务端状态决定。</p></article><article><span>统一风险边界</span><strong>不出现未提供声明</strong><p>不添加认证、折扣、销量或客户批准状态。</p></article><article><span>制作前待确认</span><strong>查看未解决事项</strong><p>风险随交付包快照和导出保留。</p></article></div>
+        <div class="translation-warning" id="translation-warning" hidden><strong>中文释义待更新</strong><p>英文文案已被人工修改；当前没有翻译能力，因此不会假装同步更新中文释义。</p></div>
+      </section>
+
+      <footer class="deliver-actions"><div><strong id="footer-version">尚未选择交付物</strong><span id="footer-mode">读取运行模式中 · 不代表客户批准</span></div><div><button type="button" class="button secondary" id="mark-reviewed">标记内部审核完成</button><button type="button" class="button primary compact-primary" id="export-package">导出交付物</button></div></footer>
+    </section>
+  </main>
+  <dialog id="export-dialog"><div class="dialog-kicker">由 Python 后端生成</div><h2>选择导出格式</h2><p>Markdown 与 JSON 均包含 Brief 快照版本、审核状态、current / stale、未解决事项和风险提示。</p><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-export">取消</button><button type="button" class="button secondary" id="download-json">下载 JSON</button><button type="button" class="button primary" id="download-markdown">下载 Markdown</button></div></dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="deliver.js?v=3"></script>
+</body>
+</html>
