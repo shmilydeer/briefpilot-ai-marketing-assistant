@@ -1,61 +1,134 @@
-# BriefPilot — AI Overseas Social Marketing Brief Assistant
+# BriefPilot｜可信 AI Brief 工作流
 
-A small, human-in-the-loop AI product prototype. Turn ambiguous marketing needs into a structured, editable brief, then generate reviewable TikTok and Instagram copy. Built as a portfolio/assessment MVP, **not a production marketing service**.
+> From ambiguous requests to accountable creative handoffs.
 
-## Actual scope
-- Real OpenAI API call #1: extract a structured marketing brief (Pydantic model)
-- Human checks and edits brief fields before generation
-- Real OpenAI API call #2: generate channel-specific drafts (Pydantic model)
-- Editable generated hook, body, CTA and visual guidance
-- Deterministic presence checks; AI-suggested claims to verify
-- Manual approval status and Markdown/JSON export
+BriefPilot 是面向中国出海营销代理团队 Account / Planner 的 Lean MVP。它把中文、英文或混合语言的模糊客户需求，转化为可追溯、可澄清、可人工确认并能安全交接的营销 Brief 工作流。
 
-**Not implemented:** login, analytics, publishing, retrieval, automated claim verification, persistent user database, team collaboration, agent orchestration.
+产品重点不是“一键生成文案”，而是让团队能够回答：信息来自哪里、哪些内容仍待核实、谁确认了当前 Brief、交付物基于哪个版本，以及需求变化后哪些旧稿需要复审。
 
-## Architecture
-`Streamlit UI → Python logic → OpenAI Chat Completions Parse / Pydantic → Human review → Markdown/JSON export`
+## 核心流程
 
-Default model: `gpt-4o-mini`. Model access and charges depend on the owner's OpenAI API account. A ChatGPT subscription does **not** automatically provide API credit.
+1. **Capture｜采集需求**：输入原始需求，选择英国或美国市场以及 TikTok / Instagram 渠道。
+2. **Clarify｜澄清与确认**：检查结构化 Brief、字段来源和核实状态；回答最多三个优先问题，并显式应用建议；分别执行保存草稿和人工确认。
+3. **Deliver｜生成与审核**：基于已保存且已确认的 Brief 生成营销简报、客户澄清表和创意交接稿；编辑、内部审核并导出 Markdown / JSON。
 
-## Local setup
-1. Install Python 3.11+.
-2. `python -m venv .venv`
-3. Activate: Windows `.venv\\Scripts\\activate`, macOS/Linux `source .venv/bin/activate`.
-4. `pip install -r requirements.txt`
-5. Set an environment variable `OPENAI_API_KEY` or create a local `.streamlit/secrets.toml` with `OPENAI_API_KEY = "your-key"`. **Never commit this file or share keys in a chat/screenshot.**
-6. `streamlit run app.py`
-7. `pytest -q`
+## 已实现能力
 
-## Deployment (Streamlit Community Cloud)
-1. Create a GitHub repository and push these source files. Do not push `.streamlit/secrets.toml`.
-2. In https://share.streamlit.io/ select **Create app**, choose repo/branch, and set entrypoint `app.py`.
-3. Under **Advanced settings → Secrets**, add `OPENAI_API_KEY = "..."` and deploy.
-4. Open the public URL in a private browser, run the complete flow, and download both exports.
-5. To prevent surprise costs, set provider-level usage limits and monitor API spend. A public demo with a server-side key still lets visitors trigger paid API requests; restrict exposure or take the app offline when not needed.
+- Pydantic 结构化 Brief 与 OpenAI structured output 适配。
+- 核心字段来源：客户原文、用户填写、AI 推断或未知；原文片段只在输入中存在精确依据时保存。
+- 独立核实状态；“客户提供”不等于事实已验证。
+- 最多三个结构化澄清问题，支持回答、暂缓、不适用和显式应用。
+- 保存草稿与人工确认分离；仅实质变化增加 Brief 版本。
+- 受众、营销目标、核心信息或目标市场变化时撤销确认，并触发 Change Impact Review。
+- DraftPackage 绑定 Brief 版本、Brief 深拷贝快照和澄清快照。
+- 新稿追加到当前会话历史；生成失败不清除旧稿。
+- `current` / `stale` 生命周期；旧稿保留并记录过期原因。
+- TikTok / Instagram 英文稿与中文释义；英文人工编辑后释义标记为待更新。
+- 内容修订号与内部审核状态绑定；内部审核不代表客户、市场或法律批准。
+- 后端按指定交付包生成风险感知式 Markdown / JSON 导出。
 
-## Product choices
-- Unknown facts are empty strings; missing fields and assumptions remain visible.
-- A user can edit a brief before the second model call; generated content is editable.
-- Rule checks confirm presence only, **not truthfulness, quality, cultural fit, legal compliance or creative effectiveness**.
-- Only a human can mark a draft approved. No automated posting.
-- No personal data should be entered in demo briefs.
+## 当前主架构
 
-## Manual acceptance checklist
-- [ ] Real API returns structured Brief
-- [ ] Input missing key details is surfaced rather than fabricated
-- [ ] Human edit changes data passed to content generation
-- [ ] Selected channels return distinct drafts
-- [ ] Reviewer can edit content and choose review status
-- [ ] Markdown and JSON download successfully
-- [ ] Deployed public URL works in incognito mode
-- [ ] No API key committed to GitHub or visible in client
+```text
+HTML / CSS / JavaScript
+        ↓ fetch
+Python 标准库 HTTP API
+        ↓
+WorkspaceSession + Pydantic + 纯业务函数
+        ↓
+local_fixture 或显式 live_ai 适配器
+        ↓
+人工澄清、确认、审核与导出
+```
 
-## Test fixtures
-See `TEST_PLAN.md`. Unit tests intentionally mock nothing; they test deterministic logic without paid API calls. Live end-to-end outcomes must be recorded *after* a user with an API key executes them.
+- 当前主工作流：`design_prototype/` + `integration_api.py`。
+- 业务模型与纯函数：`models.py`、`logic.py`。
+- `app.py` 是保留的早期 Streamlit 实现，不是当前高保真三页面主入口。
+- 不使用数据库、登录系统或客户端 OpenAI 调用。
 
-## Known limitations
-- No persistent storage; Streamlit session data may disappear on reload.
-- Content editing is immediate, but rerunning generation overwrites generated text.
-- Structured output enforces shape, not factual correctness.
-- Requests run on the server and can incur cost; simple UI is not a secure multi-tenant product.
-- No full accessibility audit or cross-browser testing completed.
+## Windows 本地运行
+
+需要 Python 3.11 或更高版本。
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python integration_api.py
+```
+
+打开：`http://127.0.0.1:8767/`
+
+健康检查：`GET http://127.0.0.1:8767/api/health`
+
+可选参数：
+
+```powershell
+python integration_api.py --host 127.0.0.1 --port 8767
+```
+
+如需查看保留的 Streamlit 版本：
+
+```powershell
+streamlit run app.py
+```
+
+## 运行模式
+
+### `local_fixture`（默认）
+
+- 使用明确标注的虚构英国/美国随行杯测试数据。
+- 不调用 OpenAI，也不会产生模型费用。
+- 前端、HTTP API、会话、版本、确认、审核、stale 和导出均走真实本地代码。
+- 固定测试内容不应被描述为模型输出或客户批准内容。
+
+### `live_ai`（显式选择）
+
+- 只有用户在 Capture 选择实时模式并再次确认操作后，服务端才调用 OpenAI。
+- Capture 复用 `parse_brief`；Deliver 复用 `generate_drafts`。
+- 缺少密钥、认证失败、额度不足、超时或模型校验失败时返回明确错误，不会静默降级成 fixture。
+- 失败不会删除现有输入、Brief 或旧交付包。
+
+服务端只从进程环境读取密钥。示例仅使用占位符：
+
+```powershell
+$env:OPENAI_API_KEY = "<your-local-api-key>"
+python integration_api.py
+```
+
+不要把密钥写入前端、请求正文、截图、日志或 Git。`.env`、`.streamlit/secrets.toml`、`.venv/` 和 `test_exports/` 已加入忽略规则。
+
+## 测试
+
+```powershell
+python -m pytest -q
+```
+
+Git Checkpoint 01 前的已验证结果：
+
+```text
+51 passed
+```
+
+测试覆盖纯业务规则、fixture HTTP 流程、浏览器会话隔离、Brief 保存与确认、澄清应用、DraftPackage 快照、旧稿保留、stale、审核和导出。`live_ai` 边界使用依赖注入 Mock 验证，不等同于真实模型端到端测试。自动化测试不应产生收费 API 请求。
+
+## 会话与持久化边界
+
+- HTTP 主工作流以 HttpOnly Cookie 区分浏览器会话。
+- 同一浏览器的刷新、返回和正常阶段导航会保留当前进程内的数据。
+- 不同浏览器 Cookie 相互隔离。
+- 会话只保存在 Python 进程内存；服务重启后全部工作区和交付包失效，页面会提示重新 Capture。
+- 没有数据库、跨设备同步、多用户权限或长期历史中心。
+- Streamlit 版本使用自己的 Session State，与 HTTP 工作流会话不共享。
+
+## 尚未验证与后续方向
+
+- 尚未完成真实 OpenAI API 的 Capture → Deliver 端到端验收；当前证据是 Mock 适配测试。
+- 尚未完成真实营销质量、英国/美国文化适配、客户接受度或法律合规验证。
+- 尚未部署公开生产环境，也没有认证、限流、持久化和多租户安全能力。
+- 尚未完成移动端、跨浏览器、读屏器和完整键盘无障碍审计。
+- 下一步应先进行受控真实 API 验证和演示设备 QA，再考虑持久化、权限或更细粒度的影响分析。
+
+## 非目标
+
+当前 MVP 不包含账户系统、团队管理、统计看板、自动发布、联网事实核查、RAG、复杂 Agent、图片生成、完整历史版本中心或客户审批系统。

@@ -1,19 +1,186 @@
-# BriefPilot — One-Page PRD v0.1 (2026-11-11)
+# BriefPilot｜Lean MVP PRD V2.0
 
-**Problem:** Small brand marketers receive underspecified requests and spend time translating them into actionable creative briefs; unreviewed AI copy risks unsupported claims and channel mismatch.
+## 1. 产品定位
 
-**Target user:** Solo marketer / small business owner preparing TikTok and Instagram campaigns.
+**产品主张：** From ambiguous requests to accountable creative handoffs.
 
-**Job to be done:** Given a fuzzy marketing request, produce a brief I can correct and a channel-specific first draft I can audit and export.
+BriefPilot 是面向中国出海营销代理团队 Account / Planner 的可信 AI Brief 工作流 MVP。它帮助团队把零散、模糊或中英混合的客户需求，转化为可追溯、可澄清、可人工确认并能安全交付给创意执行人员的 Brief。
 
-**Core flow:** Raw request → AI structured extraction → missing info/assumptions → human edits → AI channel drafts → rule checks + human review → export.
+它不是通用 AI 文案生成器，也不承诺自动验证营销事实或替代客户、市场、法律审批。
 
-**In scope:** One request per session; text input; exactly two separate AI model calls; TikTok and Instagram; review and export.
+## 2. 场景与用户假设
 
-**Out of scope:** User accounts, automated posting, audience insights, web search, payment, analytics, long-term storage, complex agents.
+### 目标用户
 
-**Success criteria (functional, not commercial):** (1) A reviewer can complete the entire flow in an online demo. (2) Every draft is generated via an actual LLM call. (3) Users can see and correct AI interpretations. (4) Output has explicit review status. (5) Test evidence is recorded transparently.
+- 中国出海营销代理团队的 Account、Planner 或兼任策略与交付协调的成员。
+- 需要为英国或美国市场整理 TikTok / Instagram 营销需求。
+- 需要在客户信息不完整、时间有限的情况下，建立可审核的内部工作底稿。
 
-**Key risks:** Unsupported claims, prompt injection in user text, service/API cost, public demo abuse, missing details and poor channel differentiation. These are partly mitigated with prompts, a schema, review flags, input limits and manual approval; not eliminated.
+以上是产品假设，不代表已经完成客户访谈或市场规模验证。
 
-**Technical choices:** Python/Streamlit, OpenAI API Pydantic schema, session state, GitHub and Streamlit Community Cloud. No database.
+### 典型场景
+
+客户通过聊天、邮件或会议笔记提供一段不完整需求。Account 需要识别缺口、向客户追问、形成内部可确认的 Brief，再把一致的信息交给创意或内容团队。需求变化时，团队还需要知道旧稿是否仍可使用。
+
+## 3. 核心问题与价值假设
+
+### 核心问题
+
+- 客户原始需求常缺少受众、目标、市场、核心信息或限制。
+- AI 可能把推断写成事实，或生成并不存在的客户原话。
+- “保存编辑”“内部确认”“客户批准”和“事实核实”容易被混为一谈。
+- Brief 更新后，旧交付物可能继续流转，造成版本不一致。
+- 普通导出通常缺少版本、未解决事项和风险边界。
+
+### 价值假设
+
+如果团队能在同一流程中看到来源、待核实状态、澄清问题、人工确认和版本影响，就更容易形成可问责的创意交接。该假设尚未通过真实用户研究或商业指标验证。
+
+## 4. 用户任务与主流程
+
+```text
+Capture → Clarify → Deliver
+```
+
+1. 用户输入原始需求，选择目标市场和渠道。
+2. 系统生成结构化 Brief，并保守记录字段来源。
+3. 用户编辑字段、处理最多三个优先澄清问题；回答不会自动覆盖 Brief。
+4. 用户显式应用建议、保存草稿，再人工确认当前版本。
+5. 系统基于已保存且已确认的版本生成交付包并保存快照。
+6. 用户编辑渠道内容、完成内部审核并导出。
+7. 关键 Brief 字段变化时，确认失效，相关旧交付包标记为 stale 并保留。
+
+## 5. 功能规格
+
+### 5.1 Capture｜采集需求
+
+- 支持中文、英文或混合语言原始需求。
+- 支持英国、美国和待识别市场。
+- 支持 TikTok、Instagram，至少选择一个渠道。
+- 支持一键填入明确标注的虚构示例，不自动调用 AI。
+- `local_fixture` 返回固定虚构测试响应。
+- `live_ai` 只有在用户显式选择并确认后才调用服务端 OpenAI 适配器。
+- 请求失败时保留页面输入并显示错误，不伪装成成功分析。
+
+### 5.2 Clarify｜澄清与确认
+
+- 展示并编辑结构化 Brief。
+- 核心字段显示来源类型、原文依据和核实状态。
+- 来源类型：客户原文、用户填写、AI 推断、未知。
+- 原文依据只能保存原始输入中精确存在的片段；不能生成虚构客户引文。
+- “客户提供”默认仍为未核实，不等于事实已验证。
+- 最多显示三个优先澄清问题。
+- 问题支持回答、暂缓、不适用；回答状态与对应字段关联。
+- 回答不会自动修改 Brief；只有显式“应用建议”才更新草稿。
+- 保存草稿和确认 Brief 是两个独立动作。
+- 可以带明确标记的未解决事项确认 Brief；确认只表示内部接受当前工作版本。
+
+### 5.3 Deliver｜生成与审核
+
+- 仅允许基于已保存、当前已人工确认且无未保存修改的 Brief 生成交付包。
+- 三类交付物：Marketing Brief、Client Clarification Sheet、Creative Handoff。
+- 创意交接支持 TikTok / Instagram 英文内容及简短中文释义。
+- 本地 fixture 内容明确标注为测试内容；实时内容明确标注为 AI 工作稿。
+- 允许人工编辑英文正文；编辑后内容修订号增加、原内部审核失效、中文释义标记待更新。
+- 审核状态为内部状态，不代表客户批准、市场验证或法律批准。
+- 支持按选定交付包导出 Markdown 和 JSON。
+
+## 6. 核心状态与一致性规则
+
+### 来源与核实
+
+- 有原始输入精确依据：`customer_original` + `unverified`。
+- 用户编辑：`user_entered` + `pending`。
+- 模型返回但无法匹配原文：`ai_inference` + `pending`。
+- 无可靠值或依据：`unknown` + `pending`。
+- 产品不自动把产品功效、折扣、认证或客户陈述升级为事实已验证。
+
+### 澄清
+
+- 状态包括 open、answered、deferred、not_applicable、applied。
+- answered 只表示已记录回答；applied 才表示回答已进入 Brief 草稿。
+- answered、applied 或 not_applicable 的事项不应继续作为未解决项导出；open 和 deferred 保留。
+
+### 保存、版本与确认
+
+- 草稿编辑本身不增加版本。
+- 保存时仅实质 Brief 内容变化才增加版本。
+- 重复保存相同内容不增加版本。
+- 实质变化使原确认失效。
+- 存在未保存修改时不能确认或生成正式工作交付物。
+- 人工确认不等于客户批准，也不等于字段事实已核实。
+
+### Brief 快照与交付包
+
+- 每个 DraftPackage 保存 `source_brief_revision`、独立 `source_brief_snapshot` 和 `clarification_snapshot`。
+- 后续编辑不能改变旧稿绑定的来源记录。
+- 生成成功追加新包，不静默覆盖旧稿。
+- 生成失败保留现有交付包。
+- 导出旧稿时使用旧稿自己的快照、版本和澄清状态。
+
+### Change Impact Review 与 stale
+
+- 当前实现的关键字段：目标受众、营销目标、核心信息、目标市场。
+- 关键字段保存后，已有 current 交付包标记为 stale、审核失效并记录原因。
+- 当前规则定位到整份交付包，不声称具备字段到内容片段的语义级影响分析。
+- 非关键字段不会被无条件判定为影响全部交付物。
+- stale 旧稿仍可查看和带警告导出，但不能标记为当前内部审核完成。
+
+## 7. 实际交付物
+
+1. **Marketing Brief**：读取交付包绑定的 Brief 快照与版本。
+2. **Client Clarification Sheet**：读取生成时的结构化澄清快照及状态。
+3. **Creative Handoff**：包含渠道文案、CTA、视觉方向、标签、中文释义和审核提示。
+4. **Markdown / JSON 导出**：包含用途、Brief 版本、生成模式、内容修订、审核状态、current/stale、未解决事项和风险说明。
+
+## 8. 优先级
+
+### P0｜当前 Lean MVP
+
+- Capture → Clarify → Deliver 完整本地工作流。
+- fixture 与 live AI 模式明确区分。
+- 来源、核实、澄清、显式应用、保存和确认。
+- Brief 版本、交付物快照、旧稿保留和 stale。
+- TikTok / Instagram 工作稿、人工编辑、内部审核和风险导出。
+- 无收费调用的自动化回归测试。
+
+### P1｜下一阶段候选
+
+- 受控真实 OpenAI 端到端验收与错误观测。
+- 文案质量、UK / US 表达和人工审核可用性评估。
+- 更完整的键盘、读屏、移动端和跨浏览器 QA。
+- 更清楚的历史包选择和较细粒度的影响提示，但不扩大为复杂版本中心。
+
+### Out of Scope
+
+- 数据库、账号、登录、多租户、团队权限。
+- 项目管理、模板中心、统计看板和通知中心。
+- 自动发布、广告平台连接、联网事实核查或法律审批。
+- RAG、复杂 Agent、图片或视频生成。
+- 客户签批系统、完整商业 SaaS 和长期历史存储。
+
+## 9. 风险与局限
+
+- Structured output 只能约束结构，不能保证事实正确或创意质量。
+- 模型可能遗漏关键信息、产生不适合当地文化的表达或提出不安全营销声明。
+- 字段来源匹配是保守的精确文本机制，不是完整字段级证据系统。
+- Change Impact Review 是规则判断，不是语义依赖图。
+- 内存会话在服务重启后丢失；不适合生产数据。
+- 本地服务没有认证、限流或多租户隔离，不应直接公开部署。
+- `live_ai` 会产生费用；缺少真实 API 端到端证据。
+
+## 10. 验证计划
+
+- 自动化：业务纯函数、HTTP API、会话隔离、失败状态保留、Mock live AI、导出一致性。
+- 浏览器：在 `local_fixture` 下验证 Capture → Clarify → Deliver、刷新、返回、stale、旧稿和导出。
+- 真实 AI：由有权限的操作者显式启用 `live_ai`，记录输入、结构化响应、错误、费用边界和人工判断；在执行前不宣称通过。
+- 用户验证：后续与目标 Account / Planner 进行任务式可用性测试；目前没有客户访谈、转化率或线上成效数据。
+
+## 11. 技术约束
+
+- Python 3.11+、Pydantic 2、OpenAI Python SDK、原生 HTML / CSS / JavaScript。
+- 本地 HTTP 层使用 Python 标准库 `ThreadingHTTPServer`，默认绑定 `127.0.0.1:8767`。
+- WorkspaceSession 和 SessionStore 位于进程内存，以 HttpOnly Cookie 隔离浏览器会话。
+- OpenAI 密钥只从服务端进程环境读取，不发送到浏览器。
+- Streamlit 应用保留为早期实现，但高保真 HTML + HTTP API 是当前主工作流。
+- 当前不引入数据库、新前端框架或生产部署基础设施。
