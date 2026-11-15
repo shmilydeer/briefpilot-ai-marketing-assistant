@@ -178,6 +178,12 @@ function renderQuestions(questions, isDirty) {
   });
 }
 
+function questionCountText(questions) {
+  if (!questions.length) return '暂无澄清问题';
+  const unresolved = questions.filter(item => ['open', 'deferred'].includes(item.status)).length;
+  return unresolved ? `${unresolved} 项待处理` : '全部已处理';
+}
+
 function render(state, message = '') {
   workspace = state;
   setControlsDisabled(false);
@@ -211,8 +217,7 @@ function render(state, message = '') {
       ? `关键字段 ${impactLabels} 已修改；保存后将更新版本与确认状态。`
       : `关键字段 ${impactLabels} 的变化已保存；当前 Brief 需要重新确认。`;
   }
-  const unresolved = state.questions.filter(item => ['open', 'deferred'].includes(item.status)).length;
-  document.querySelector('#question-count').textContent = unresolved ? `${unresolved} 项待处理` : '全部已处理';
+  document.querySelector('#question-count').textContent = questionCountText(state.questions);
   const enterDeliver = document.querySelector('#enter-deliver');
   enterDeliver.textContent = liveMode ? '调用 AI 生成并进入' : '生成测试交付物并进入';
   enterDeliver.title = state.status !== 'confirmed' || state.dirty ? '请先保存并人工确认当前 Brief' : (liveMode ? '将通过服务端调用 OpenAI，可能产生费用' : '生成固定本地测试交付物');

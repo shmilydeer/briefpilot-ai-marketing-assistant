@@ -145,6 +145,20 @@ function renderClarifications(questions) {
   });
 }
 
+const unresolvedStatusNames = {
+  open: '待处理',
+  answered: '已回答',
+  deferred: '已暂缓',
+  not_applicable: '不适用',
+  applied: '已应用',
+};
+
+function formatUnresolvedItem(item) {
+  const match = /^\[([a-z_]+)\]\s*(.+)$/.exec(item);
+  if (!match || !unresolvedStatusNames[match[1]]) return item;
+  return `${match[2]}（${unresolvedStatusNames[match[1]]}）`;
+}
+
 function renderDrafts(packageData) {
   const container = document.querySelector('#channel-drafts');
   container.replaceChildren();
@@ -263,7 +277,7 @@ function render(state) {
   const riskItems = document.querySelector('#risk-items');
   riskItems.replaceChildren();
   (state.unresolved_items.length ? state.unresolved_items : ['生成快照中没有记录未解决事项。']).forEach(item => {
-    const line = document.createElement('p'); line.textContent = item; riskItems.append(line);
+    const line = document.createElement('p'); line.textContent = formatUnresolvedItem(item); riskItems.append(line);
   });
   document.querySelector('#version-note').textContent = `当前内容绑定 Brief v${pkg.source_brief_revision}.0`;
   document.querySelector('#clarification-version').textContent = `Brief v${pkg.source_brief_revision}.0`;

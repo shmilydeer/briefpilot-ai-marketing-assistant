@@ -2,10 +2,11 @@ from types import SimpleNamespace
 
 from models import (
     Brief, BriefExtraction, ClarificationQuestion, DraftPackage, ChannelDraft,
-    GeneratedChannelDraft, GeneratedDraftPackage,
+    FieldSource, GeneratedChannelDraft, GeneratedDraftPackage,
 )
 from logic import (
     BRIEF_MAX_COMPLETION_TOKENS, DRAFT_MAX_COMPLETION_TOKENS,
+    DEFAULT_MODEL, LUNA_MODEL, MODEL_ENV_VAR, resolve_openai_model,
     quality_checks, export_markdown, parse_brief, generate_drafts,
     changed_brief_fields, change_impact_fields, save_brief_revision,
     update_clarification, apply_clarification_answer,
@@ -106,6 +107,74 @@ def test_generate_drafts_binds_english_and_chinese_structured_fields():
     assert package.source_brief_revision == 4
     assert package.drafts[0].body == "Carry it easily through the working day."
     assert package.drafts[0].chinese_summary == "轻松随行，陪伴日常通勤。"
+
+
+def test_model_configuration_defaults_to_gpt_4o_mini_and_rejects_unknown_values():
+    assert resolve_openai_model(None) == DEFAULT_MODEL
+    assert resolve_openai_model(" gpt-6-luna ") == LUNA_MODEL
+    with pytest.raises(ValueError, match=MODEL_ENV_VAR):
+        resolve_openai_model("gpt-6-unknown")
+
+
+def test_luna_capture_includes_none_reasoning_effort():
+    extraction = BriefExtraction(**sample_brief().model_dump(exclude={"field_sources"}))
+    client = FakeStructuredClient(extraction)
+
+    parse_brief(
+        "CupCo plans a UK campaign for Commuters.",
+        "mock-key-not-sent",
+        model=LUNA_MODEL,
+        client=client,
+    )
+
+    assert client.calls[0]["model"] == LUNA_MODEL
+    assert client.calls[0]["reasoning_effort"] == "none"
+    assert client.calls[0]["max_completion_tokens"] == BRIEF_MAX_COMPLETION_TOKENS
+
+
+def test_luna_deliver_includes_none_reasoning_effort():
+    generated = GeneratedDraftPackage(
+        drafts=[GeneratedChannelDraft(
+            channel="TikTok",
+            hook="Made for the commute.",
+            body="Carry it easily through the working day.",
+            call_to_action="Explore the travel cup.",
+            visual_direction="Natural-light commute scenes.",
+            hashtags=["#DailyCarry"],
+            notes_for_review=[],
+            chinese_summary="Luna test summary.",
+        )],
+        claims_to_verify=[],
+        general_review_notes=[],
+    )
+    client = FakeStructuredClient(generated)
+
+    generate_drafts(
+        sample_brief(),
+        ["TikTok"],
+        "mock-key-not-sent",
+        model=LUNA_MODEL,
+        client=client,
+    )
+
+    assert client.calls[0]["model"] == LUNA_MODEL
+    assert client.calls[0]["reasoning_effort"] == "none"
+    assert client.calls[0]["max_completion_tokens"] == DRAFT_MAX_COMPLETION_TOKENS
+
+
+def test_gpt_4o_mini_requests_do_not_include_reasoning_effort():
+    extraction = BriefExtraction(**sample_brief().model_dump(exclude={"field_sources"}))
+    client = FakeStructuredClient(extraction)
+
+    parse_brief(
+        "CupCo plans a UK campaign for Commuters.",
+        "mock-key-not-sent",
+        model=DEFAULT_MODEL,
+        client=client,
+    )
+
+    assert client.calls[0]["model"] == DEFAULT_MODEL
+    assert "reasoning_effort" not in client.calls[0]
 
 
 def test_live_openai_clients_disable_automatic_retries(monkeypatch):
@@ -249,3 +318,90 @@ def test_clarification_question_field_matching_distinguishes_market_audience_and
     })
     questions = create_clarification_questions(brief)
     assert [item.field_name for item in questions] == ["region", "audience", "campaign_goal"]
+
+
+def test_clarification_questions_use_missing_information_without_assumptions():
+    brief = sample_brief().model_copy(update={
+        "missing_information": ["What is the campaign budget?"],
+        "assumptions": [],
+    })
+    questions = create_clarification_questions(brief)
+    assert [item.question for item in questions] == ["What is the campaign budget?"]
+
+
+def test_clarification_questions_use_assumptions_without_missing_information():
+    brief = sample_brief().model_copy(update={
+        "missing_information": [],
+        "assumptions": ["Should the audience be narrowed further?"],
+    })
+    questions = create_clarification_questions(brief)
+    assert [item.question for item in questions] == ["Should the audience be narrowed further?"]
+    assert questions[0].field_name == "audience"
+
+
+def test_clarification_questions_combine_both_sources_with_assumptions_first():
+    brief = sample_brief().model_copy(update={
+        "missing_information": ["What is the call to action?"],
+        "assumptions": ["Should the audience be narrowed further?"],
+    })
+    questions = create_clarification_questions(brief)
+    assert [item.field_name for item in questions] == ["audience", "call_to_action"]
+
+
+def test_clarification_questions_deduplicate_same_topic_and_keep_clearer_wording():
+    brief = sample_brief().model_copy(update={
+        "missing_information": ["campaign goal"],
+        "assumptions": ["What is the campaign goal?"],
+    })
+    questions = create_clarification_questions(brief)
+    assert len(questions) == 1
+    assert questions[0].question == "What is the campaign goal?"
+
+
+def test_clarification_questions_filter_missing_information_answered_in_raw_text():
+    brief = sample_brief().model_copy(update={
+        "missing_information": ["Who is the target audience?"],
+        "assumptions": [],
+    })
+    questions = create_clarification_questions(
+        brief,
+        "The target audience is Commuters in the UK.",
+    )
+    assert questions == []
+
+
+def test_clarification_questions_filter_missing_information_for_verified_field():
+    brief = sample_brief().model_copy(update={
+        "missing_information": ["Who is the target audience?"],
+        "assumptions": [],
+        "field_sources": {
+            "audience": FieldSource(
+                source_type="ai_inference",
+                verification_status="verified",
+            )
+        },
+    })
+    assert create_clarification_questions(brief) == []
+
+
+def test_clarification_questions_remain_capped_at_three_after_filtering():
+    brief = sample_brief().model_copy(update={
+        "missing_information": [
+            "What is the brand?",
+            "What is the product?",
+            "Who is the audience?",
+            "What is the campaign goal?",
+        ],
+        "assumptions": ["Should the tone be formal?"],
+    })
+    questions = create_clarification_questions(brief)
+    assert len(questions) == 3
+    assert [item.priority for item in questions] == [1, 2, 3]
+
+
+def test_clarification_questions_allow_both_sources_to_be_empty():
+    brief = sample_brief().model_copy(update={
+        "missing_information": [],
+        "assumptions": [],
+    })
+    assert create_clarification_questions(brief) == []

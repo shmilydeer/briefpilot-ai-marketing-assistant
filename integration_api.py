@@ -508,9 +508,7 @@ class WorkspaceSession:
             mode=request.mode,
             saved_brief=brief.model_copy(deep=True),
             draft_brief=brief.model_copy(deep=True),
-            questions=create_clarification_questions(
-                brief.model_copy(update={"missing_information": [], "assumptions": brief.assumptions})
-            ),
+            questions=create_clarification_questions(brief, request.raw_text),
         )
 
     def response(self) -> WorkspaceResponse:

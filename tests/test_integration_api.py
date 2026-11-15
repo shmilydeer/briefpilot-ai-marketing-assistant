@@ -2,6 +2,7 @@ import http.client
 import json
 import re
 import threading
+from pathlib import Path
 
 import pytest
 from openai import (
@@ -154,6 +155,38 @@ def test_capture_creates_cookie_session_and_workspace_survives_refresh(local_ser
     status, refreshed, _ = http_json(local_server, "GET", "/api/workspace", cookie=cookie)
     assert status == 200
     assert refreshed == capture
+
+
+def test_capture_workspace_keeps_missing_information_available_for_questions():
+    request = capture_request()
+    brief = build_fixture_brief(request).model_copy(update={
+        "assumptions": [],
+        "missing_information": ["What is the call to action?"],
+    })
+    session = WorkspaceSession.from_capture(request, brief)
+    assert session.saved_brief.missing_information == ["What is the call to action?"]
+    assert [item.field_name for item in session.questions] == ["call_to_action"]
+
+
+def test_clarify_question_count_copy_distinguishes_empty_from_completed():
+    source = (
+        Path(__file__).parents[1] / "design_prototype" / "clarify.js"
+    ).read_text(encoding="utf-8")
+    assert "if (!questions.length) return '暂无澄清问题';" in source
+    assert "return unresolved ? `${unresolved} 项待处理` : '全部已处理';" in source
+    assert "questionCountText(state.questions)" in source
+
+
+def test_deliver_frontend_localizes_unresolved_status_without_changing_export_data():
+    source = (
+        Path(__file__).parents[1] / "design_prototype" / "deliver.js"
+    ).read_text(encoding="utf-8")
+    assert "function formatUnresolvedItem(item)" in source
+    assert "deferred: '已暂缓'" in source
+    assert "open: '待处理'" in source
+    assert "not_applicable: '不适用'" in source
+    assert "formatUnresolvedItem(item)" in source
+    assert "state.unresolved_items" in source
 
 
 def test_different_browser_sessions_are_isolated(local_server):

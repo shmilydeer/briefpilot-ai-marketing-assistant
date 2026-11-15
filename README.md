@@ -89,6 +89,19 @@ streamlit run app.py
 - Capture 复用 `parse_brief`；Deliver 复用 `generate_drafts`。
 - 缺少密钥、认证失败、额度不足、超时或模型校验失败时返回明确错误，不会静默降级成 fixture。
 - 失败不会删除现有输入、Brief 或旧交付包。
+- 模型输出必须经过人工核对；内部审核不代表客户批准、事实核实或法律合规确认。
+
+### OpenAI 模型选择
+
+未设置模型环境变量时，`live_ai` 默认使用 `gpt-4o-mini`。如需显式使用 GPT-6 Luna，请在启动服务前设置 `BRIEFPILOT_OPENAI_MODEL`：
+
+```powershell
+$env:BRIEFPILOT_OPENAI_MODEL = "gpt-6-luna"
+$env:OPENAI_API_KEY = "<your-local-api-key>"
+python integration_api.py --host 127.0.0.1 --port 8767
+```
+
+当前支持 `gpt-4o-mini` 和 `gpt-6-luna`。环境变量只在 Python 服务启动时读取；修改后需要重启服务。不支持的模型值会返回明确配置错误，不会自动改用其他模型。若不设置 `BRIEFPILOT_OPENAI_MODEL`，服务保持 `gpt-4o-mini` 默认值。`local_fixture` 不需要设置模型或 API Key。
 
 服务端只从进程环境读取密钥。示例仅使用占位符：
 
@@ -108,7 +121,7 @@ python -m pytest -q
 当前已验证结果：
 
 ```text
-63 passed
+78 passed
 ```
 
 测试覆盖纯业务规则、fixture HTTP 流程、浏览器会话隔离、Brief 保存与确认、澄清应用、DraftPackage 快照、旧稿保留、stale、审核、导出和 live AI 安全错误映射。`live_ai` 自动化边界使用依赖注入 Mock，自动化测试不会产生收费 API 请求。
@@ -124,8 +137,8 @@ python -m pytest -q
 
 ## 尚未验证与后续方向
 
-- 此前已完成一次受控真实 AI Capture → Clarify → Deliver → Markdown / JSON 导出的端到端验证。
-- 最近的响应式 UI 修改完成后，尚未重新执行真实 AI 全流程回归；当前发布回归以 `local_fixture` 和 Mock 自动化为准。
+- 已使用 `gpt-6-luna` 完成一次受控真实 AI Capture → Clarify → Deliver → Markdown / JSON 导出的端到端验证。
+- 此后完成了 Clarify / Deliver 的小范围 UI 修复；最新 UI 回归使用 `local_fixture`，尚未再次执行付费真实 AI 全流程。
 - 尚未完成真实营销质量、英国/美国文化适配、客户接受度或法律合规验证。
 - 尚未部署公开生产环境，也没有认证、限流、持久化和多租户安全能力。
 - 尚未完成移动端、跨浏览器、读屏器和完整键盘无障碍审计。

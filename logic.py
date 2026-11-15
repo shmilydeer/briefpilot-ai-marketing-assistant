@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from collections.abc import Callable
 from models import (
@@ -6,7 +7,26 @@ from models import (
     FieldSource, GeneratedDraftPackage,
 )
 
-MODEL = "gpt-4o-mini"
+MODEL_ENV_VAR = "BRIEFPILOT_OPENAI_MODEL"
+DEFAULT_MODEL = "gpt-4o-mini"
+LUNA_MODEL = "gpt-6-luna"
+SUPPORTED_MODELS = frozenset({DEFAULT_MODEL, LUNA_MODEL})
+
+
+def resolve_openai_model(configured_model: str | None) -> str:
+    """Resolve the configured model without silently falling back."""
+    if configured_model is None:
+        return DEFAULT_MODEL
+    model = configured_model.strip()
+    if model not in SUPPORTED_MODELS:
+        supported = ", ".join(sorted(SUPPORTED_MODELS))
+        raise ValueError(
+            f"Unsupported {MODEL_ENV_VAR} value {model!r}. Supported models: {supported}."
+        )
+    return model
+
+
+MODEL = resolve_openai_model(os.environ.get(MODEL_ENV_VAR))
 BRIEF_MAX_COMPLETION_TOKENS = 1_200
 DRAFT_MAX_COMPLETION_TOKENS = 2_400
 
@@ -20,11 +40,14 @@ def parse_brief(text: str, api_key: str, model: str = MODEL, client=None) -> Bri
     if client is None:
         from openai import OpenAI
         client = OpenAI(api_key=api_key, timeout=35.0, max_retries=0)
+    model = resolve_openai_model(model)
+    request_options = {"reasoning_effort": "none"} if model == LUNA_MODEL else {}
     result = client.chat.completions.parse(
         model=model,
         messages=[{"role":"system","content":BRIEF_SYSTEM}, {"role":"user","content":text[:5000]}],
         response_format=BriefExtraction,
         max_completion_tokens=BRIEF_MAX_COMPLETION_TOKENS,
+        **request_options,
     )
     message = result.choices[0].message
     if message.refusal or message.parsed is None:
@@ -38,12 +61,15 @@ def generate_drafts(brief: Brief, channels: list[str], api_key: str, model: str 
     if client is None:
         from openai import OpenAI
         client = OpenAI(api_key=api_key, timeout=45.0, max_retries=0)
+    model = resolve_openai_model(model)
+    request_options = {"reasoning_effort": "none"} if model == LUNA_MODEL else {}
     payload = {"reviewed_brief": brief.model_dump(), "channels": channels}
     result = client.chat.completions.parse(
         model=model,
         messages=[{"role":"system","content":DRAFT_SYSTEM}, {"role":"user","content":json.dumps(payload, ensure_ascii=False)}],
         response_format=GeneratedDraftPackage,
         max_completion_tokens=DRAFT_MAX_COMPLETION_TOKENS,
+        **request_options,
     )
     message = result.choices[0].message
     if message.refusal or message.parsed is None:
@@ -139,16 +165,108 @@ def _question_field(text: str) -> str:
             return field
     return "general"
 
-def create_clarification_questions(brief: Brief) -> list[ClarificationQuestion]:
-    items = list(dict.fromkeys(brief.missing_information + brief.assumptions))[:3]
+def _normalise_question(text: str) -> str:
+    return re.sub(r"[\W_]+", "", text.casefold())
+
+
+def _is_direct_value_question(text: str) -> bool:
+    return bool(re.search(
+        r"\b(?:what|who|which|where|when|how much)\b|是什么|是谁|哪些|哪个|哪里|何时|多少",
+        text.casefold(),
+    ))
+
+
+def _question_is_already_answered(
+    brief: Brief,
+    raw_text: str,
+    field_name: str,
+    question: str,
+    source_kind: str,
+) -> bool:
+    if field_name == "general" or field_name not in Brief.model_fields:
+        return False
+    value = str(getattr(brief, field_name, "")).strip()
+    if not value:
+        return False
+    field_source = brief.field_sources.get(field_name)
+    explicitly_sourced = bool(
+        field_source
+        and (
+            field_source.source_type in {"customer_original", "user_entered"}
+            or field_source.verification_status == "verified"
+        )
+    )
+    present_in_raw_text = bool(raw_text and value.casefold() in raw_text.casefold())
+    if not (explicitly_sourced or present_in_raw_text):
+        return False
+    return source_kind == "missing" or _is_direct_value_question(question)
+
+
+def _same_clarification_topic(
+    existing_text: str,
+    existing_field: str,
+    candidate_text: str,
+    candidate_field: str,
+) -> bool:
+    existing = _normalise_question(existing_text)
+    candidate = _normalise_question(candidate_text)
+    if not existing or not candidate:
+        return False
+    if existing == candidate:
+        return True
+    if existing_field != candidate_field or existing_field == "general":
+        return False
+    if min(len(existing), len(candidate)) >= 2 and (
+        existing in candidate or candidate in existing
+    ):
+        return True
+    return _is_direct_value_question(existing_text) and _is_direct_value_question(candidate_text)
+
+
+def _question_clarity(text: str) -> tuple[int, int]:
+    return (int(text.rstrip().endswith(("?", "？"))), len(text.strip()))
+
+
+def create_clarification_questions(
+    brief: Brief,
+    raw_text: str = "",
+) -> list[ClarificationQuestion]:
+    """Build up to three actionable questions while preserving the source lists."""
+    candidates = [
+        *(("assumption", item) for item in brief.assumptions),
+        *(("missing", item) for item in brief.missing_information),
+    ]
+    selected: list[tuple[str, str]] = []
+    for source_kind, raw_item in candidates:
+        item = raw_item.strip()
+        if not item:
+            continue
+        field_name = _question_field(item)
+        if _question_is_already_answered(
+            brief, raw_text, field_name, item, source_kind
+        ):
+            continue
+        duplicate_index = next((
+            index
+            for index, (existing_field, existing_text) in enumerate(selected)
+            if _same_clarification_topic(
+                existing_text, existing_field, item, field_name
+            )
+        ), None)
+        if duplicate_index is not None:
+            if _question_clarity(item) > _question_clarity(selected[duplicate_index][1]):
+                selected[duplicate_index] = (field_name, item)
+            continue
+        selected.append((field_name, item))
+
     return [
         ClarificationQuestion(
             id=f"cq-{index}",
-            field_name=_question_field(item),
+            field_name=field_name,
             question=item,
             priority=index,
         )
-        for index, item in enumerate(items, 1)
+        for index, (field_name, item) in enumerate(selected[:3], 1)
     ]
 
 def update_clarification(
