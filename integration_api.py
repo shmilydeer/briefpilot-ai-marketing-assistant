@@ -61,6 +61,31 @@ EDITABLE_BRIEF_FIELDS = {
     "product", "campaign_goal", "audience", "key_message", "region", "tone", "constraints"
 }
 RunMode = Literal["local_fixture", "live_ai"]
+TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
+
+
+def environment_flag(name: str) -> bool:
+    """Read a boolean environment flag without inspecting any secret values."""
+    return os.environ.get(name, "").strip().lower() in TRUE_ENV_VALUES
+
+
+def public_demo_enabled() -> bool:
+    """Render deployments and explicit public demos are fixture-only."""
+    return environment_flag("RENDER") or environment_flag("BRIEFPILOT_PUBLIC_DEMO")
+
+
+def server_port_from_environment() -> int:
+    """Use Render's assigned port while preserving the local 8767 default."""
+    raw_port = os.environ.get("PORT", "").strip()
+    if not raw_port:
+        return 8767
+    try:
+        port = int(raw_port)
+    except ValueError as exc:
+        raise ValueError("PORT 必须是 1 到 65535 之间的整数") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("PORT 必须是 1 到 65535 之间的整数")
+    return port
 
 
 def _configure_live_ai_logger() -> None:
@@ -901,6 +926,18 @@ class LocalIntegrationHandler(SimpleHTTPRequestHandler):
     def ai_adapter(self) -> LiveAIAdapter:
         return self.server.ai_adapter  # type: ignore[attr-defined]
 
+    @property
+    def live_ai_enabled(self) -> bool:
+        return self.server.live_ai_enabled  # type: ignore[attr-defined]
+
+    def _require_live_ai_enabled(self) -> None:
+        if not self.live_ai_enabled:
+            raise WorkspaceOperationError(
+                HTTPStatus.FORBIDDEN,
+                "live_ai_disabled",
+                "公开演示仅支持 Local Fixture；服务端未调用 OpenAI。",
+            )
+
     def _session_id(self) -> str | None:
         cookie = SimpleCookie(self.headers.get("Cookie", ""))
         morsel = cookie.get(SESSION_COOKIE)
@@ -969,12 +1006,21 @@ class LocalIntegrationHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         if path == "/api/health":
+            live_ai_enabled = self.live_ai_enabled
             self._write_json(
                 HTTPStatus.OK,
                 {
                     "status": "ok",
-                    "modes": ["local_fixture", "live_ai"],
-                    "live_ai_configured": self.ai_adapter.configured,
+                    "modes": (
+                        ["local_fixture", "live_ai"]
+                        if live_ai_enabled
+                        else ["local_fixture"]
+                    ),
+                    "public_demo": not live_ai_enabled,
+                    "live_ai_enabled": live_ai_enabled,
+                    "live_ai_configured": (
+                        self.ai_adapter.configured if live_ai_enabled else False
+                    ),
                 },
             )
             return
@@ -1032,7 +1078,11 @@ class LocalIntegrationHandler(SimpleHTTPRequestHandler):
         try:
             if path == "/api/capture/analyze":
                 request = self._read_json_model(CaptureAnalyzeRequest)
-                brief = self.ai_adapter.analyze(request) if request.mode == "live_ai" else None
+                if request.mode == "live_ai":
+                    self._require_live_ai_enabled()
+                    brief = self.ai_adapter.analyze(request)
+                else:
+                    brief = None
                 session_id, session = self.session_store.replace(
                     self._session_id(), request, brief
                 )
@@ -1047,6 +1097,8 @@ class LocalIntegrationHandler(SimpleHTTPRequestHandler):
             elif path == "/api/brief/confirm":
                 response = session.confirm()
             elif path == "/api/deliver/generate":
+                if session.mode == "live_ai":
+                    self._require_live_ai_enabled()
                 generator = (
                     (lambda _channels: self.ai_adapter.generate(session))
                     if session.mode == "live_ai"
@@ -1076,22 +1128,30 @@ def create_server(
     port: int = 8767,
     session_store: SessionStore | None = None,
     ai_adapter: LiveAIAdapter | None = None,
+    live_ai_enabled: bool = True,
 ) -> ThreadingHTTPServer:
     handler = partial(LocalIntegrationHandler, directory=str(PROTOTYPE_DIR))
     server = ThreadingHTTPServer((host, port), handler)
     server.session_store = session_store or SessionStore()  # type: ignore[attr-defined]
     server.ai_adapter = ai_adapter or LiveAIAdapter()  # type: ignore[attr-defined]
+    server.live_ai_enabled = live_ai_enabled  # type: ignore[attr-defined]
     return server
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="BriefPilot local integration")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8767)
+    parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args()
 
-    server = create_server(args.host, args.port)
-    mode_status = "已配置" if server.ai_adapter.configured else "未配置"
+    port = args.port if args.port is not None else server_port_from_environment()
+    fixture_only = public_demo_enabled()
+    server = create_server(args.host, port, live_ai_enabled=not fixture_only)
+    mode_status = (
+        "已禁用（公开演示仅使用 Local Fixture）"
+        if fixture_only
+        else ("已配置" if server.ai_adapter.configured else "未配置")
+    )
     print(f"BriefPilot 本地服务（fixture 默认；live_ai {mode_status}）")
     print(f"打开：http://{args.host}:{server.server_address[1]}/")
     try:

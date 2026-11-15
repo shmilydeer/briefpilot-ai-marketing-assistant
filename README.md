@@ -6,6 +6,26 @@ BriefPilot 是面向中国出海营销代理团队 Account / Planner 的 Lean MV
 
 产品重点不是“一键生成文案”，而是让团队能够回答：信息来自哪里、哪些内容仍待核实、谁确认了当前 Brief、交付物基于哪个版本，以及需求变化后哪些旧稿需要复审。
 
+## 产品展示
+
+**在线 Demo：部署准备中，当前暂无公开链接。** 后续公开 Demo 将固定使用 `local_fixture`，不配置 API Key，也不会调用 OpenAI。
+
+下列截图来自一次受控的 **GPT-6 Luna 真实 AI 测试**，用于展示真实模型接入后的三阶段产品界面；它们不代表公开 Demo 会发起模型请求，也不代表客户、市场或法律审核结论。
+
+### Capture｜保留原始需求并结构化关键信息
+
+![BriefPilot Capture：真实 GPT-6 Luna 测试截图](docs/images/01-capture.png)
+
+### Clarify｜核对来源、处理问题并人工确认
+
+![BriefPilot Clarify：真实 GPT-6 Luna 测试截图](docs/images/02-clarify.png)
+
+### Deliver｜绑定 Brief 快照、审核并安全导出
+
+![BriefPilot Deliver：真实 GPT-6 Luna 测试截图](docs/images/03-deliver.png)
+
+产品能力集中在来源与核实状态、最多三个优先澄清问题、人工应用建议、Brief 版本、Change Impact Review、交付物快照及风险感知式导出。公开 Demo 使用同一套前端、HTTP API 与业务规则，但仅返回明确标注的固定虚构数据。
+
 ## 核心流程
 
 1. **Capture｜采集需求**：输入原始需求，选择英国或美国市场以及 TikTok / Instagram 渠道。
@@ -66,6 +86,18 @@ python integration_api.py
 ```powershell
 python integration_api.py --host 127.0.0.1 --port 8767
 ```
+
+### Render Public Demo
+
+Render Web Service 使用以下配置：
+
+```text
+Build Command: pip install -r requirements.txt
+Start Command: python integration_api.py --host 0.0.0.0
+Health Check Path: /api/health
+```
+
+服务会读取 Render 提供的 `PORT`；本地未设置 `PORT` 时仍使用 `8767`。检测到 Render 的 `RENDER=true` 后，后端会强制进入公开演示安全模式：健康检查只声明 `local_fixture`，任何直接提交的 `live_ai` Capture 或 Deliver 请求都会被拒绝，且不会读取 API Key。建议同时显式设置 `BRIEFPILOT_PUBLIC_DEMO=true`，便于在 Render 控制台中清楚标识部署用途。公开 Demo 不应设置 `OPENAI_API_KEY` 或 `BRIEFPILOT_OPENAI_MODEL`。
 
 如需查看保留的 Streamlit 版本：
 

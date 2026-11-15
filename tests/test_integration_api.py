@@ -32,6 +32,8 @@ from integration_api import (
     build_fixture_drafts,
     build_fixture_response,
     create_server,
+    public_demo_enabled,
+    server_port_from_environment,
 )
 from logic import bind_draft_package
 from models import Brief
@@ -143,6 +145,17 @@ def http_json(port, method, path, payload=None, cookie=None):
     set_cookie = response.getheader("Set-Cookie")
     connection.close()
     return response.status, data, set_cookie
+
+
+def http_download(port, path, cookie=None):
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+    headers = {"Cookie": cookie} if cookie else {}
+    connection.request("GET", path, headers=headers)
+    response = connection.getresponse()
+    body = response.read()
+    content_type = response.getheader("Content-Type")
+    connection.close()
+    return response.status, body, content_type
 
 
 def test_capture_creates_cookie_session_and_workspace_survives_refresh(local_server):
@@ -498,8 +511,8 @@ class RecordingAIAdapter:
 def server_factory():
     running = []
 
-    def start(adapter):
-        server = create_server(port=0, ai_adapter=adapter)
+    def start(adapter=None, **server_options):
+        server = create_server(port=0, ai_adapter=adapter, **server_options)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         running.append((server, thread))
@@ -510,6 +523,104 @@ def server_factory():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_render_environment_enables_fixture_only_public_demo(monkeypatch):
+    monkeypatch.delenv("BRIEFPILOT_PUBLIC_DEMO", raising=False)
+    monkeypatch.delenv("RENDER", raising=False)
+    assert public_demo_enabled() is False
+
+    monkeypatch.setenv("BRIEFPILOT_PUBLIC_DEMO", "true")
+    assert public_demo_enabled() is True
+
+    monkeypatch.setenv("BRIEFPILOT_PUBLIC_DEMO", "false")
+    monkeypatch.setenv("RENDER", "true")
+    assert public_demo_enabled() is True
+
+
+def test_server_port_uses_render_port_and_preserves_local_default(monkeypatch):
+    monkeypatch.delenv("PORT", raising=False)
+    assert server_port_from_environment() == 8767
+
+    monkeypatch.setenv("PORT", "10000")
+    assert server_port_from_environment() == 10000
+
+    monkeypatch.setenv("PORT", "not-a-port")
+    with pytest.raises(ValueError, match="PORT"):
+        server_port_from_environment()
+
+
+def test_public_demo_is_fixture_only_and_never_reads_api_key(server_factory):
+    key_reads = []
+
+    def forbidden_key_read():
+        key_reads.append(True)
+        raise AssertionError("public demo must not read an API key")
+
+    adapter = LiveAIAdapter(api_key_provider=forbidden_key_read)
+    port = server_factory(adapter, live_ai_enabled=False)
+
+    status, health, _ = http_json(port, "GET", "/api/health")
+    assert status == 200
+    assert health == {
+        "status": "ok",
+        "modes": ["local_fixture"],
+        "public_demo": True,
+        "live_ai_enabled": False,
+        "live_ai_configured": False,
+    }
+
+    live_request = capture_request().model_copy(update={"mode": "live_ai"})
+    status, error, _ = http_json(
+        port, "POST", "/api/capture/analyze", live_request.model_dump(mode="json")
+    )
+    assert status == 403
+    assert error["error"]["code"] == "live_ai_disabled"
+
+    status, capture, set_cookie = http_json(
+        port, "POST", "/api/capture/analyze", capture_request().model_dump(mode="json")
+    )
+    cookie = set_cookie.split(";", 1)[0]
+    assert status == 200
+    assert capture["mode"] == "local_fixture"
+    assert http_json(port, "POST", "/api/brief/confirm", cookie=cookie)[0] == 200
+    status, generated, _ = http_json(
+        port, "POST", "/api/deliver/generate", cookie=cookie
+    )
+    assert status == 200
+    package_id = generated["package"]["package_id"]
+    export_status, markdown, content_type = http_download(
+        port,
+        f"/api/deliver/export?package_id={package_id}&format=markdown",
+        cookie,
+    )
+    assert export_status == 200
+    assert content_type.startswith("text/markdown")
+    assert b"BriefPilot" in markdown
+    assert key_reads == []
+
+
+def test_public_demo_rejects_live_delivery_even_for_injected_live_session(server_factory):
+    request = capture_request().model_copy(update={"mode": "live_ai"})
+    store = SessionStore()
+    session_id, session = store.replace(None, request, build_fixture_brief(request))
+    session.confirm()
+    adapter = RecordingAIAdapter()
+    port = server_factory(
+        adapter,
+        live_ai_enabled=False,
+        session_store=store,
+    )
+
+    status, error, _ = http_json(
+        port,
+        "POST",
+        "/api/deliver/generate",
+        cookie=f"briefpilot_session={session_id}",
+    )
+    assert status == 403
+    assert error["error"]["code"] == "live_ai_disabled"
+    assert adapter.generate_calls == 0
 
 
 def test_fixture_mode_never_calls_injected_ai_adapter(server_factory):

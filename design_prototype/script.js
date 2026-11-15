@@ -7,6 +7,7 @@ const runMode = document.querySelector('#run-mode');
 const modeTag = document.querySelector('#mode-tag');
 const modeEyebrow = document.querySelector('#mode-eyebrow');
 const compactModeQuery = window.matchMedia('(max-width: 1040px)');
+let liveAIEnabled = true;
 function renderModeTag() {
   modeTag.textContent = compactModeQuery.matches ? modeTag.dataset.compactLabel : modeTag.dataset.fullLabel;
 }
@@ -29,6 +30,24 @@ function updateCount() {
 }
 brief.addEventListener('input', updateCount);
 runMode.addEventListener('change', updateModeLabel);
+
+async function loadRuntimeCapabilities() {
+  try {
+    const response = await fetch('/api/health', {headers: {'Accept': 'application/json'}});
+    if (!response.ok) return;
+    const capabilities = await response.json();
+    if (capabilities.live_ai_enabled === false) {
+      liveAIEnabled = false;
+      const liveOption = runMode.querySelector('option[value="live_ai"]');
+      if (liveOption) liveOption.remove();
+      runMode.value = 'local_fixture';
+      runMode.title = '公开演示固定使用 Local Fixture，不会调用 OpenAI。';
+      updateModeLabel();
+    }
+  } catch (_) {
+    // The server remains authoritative; a failed health check does not enable AI.
+  }
+}
 document.querySelector('#sample').addEventListener('click', () => {
   if (brief.value.trim() && !window.confirm('填入示例会替换当前文字。是否继续？')) return;
   brief.value = '【虚构示例，仅用于体验】\n我们计划在英国推广一款轻量随行杯，希望通过 TikTok 和 Instagram 触达 20–35 岁、通勤并关注日常设计感的消费者，建立新品认知。\n\n希望突出便携、易清洁和适合日常通勤的使用体验，语气自然、克制。计划下月上线，预算与具体发布时间尚未确认。请勿添加环保认证、折扣或客户批准等未提供信息。';
@@ -46,6 +65,11 @@ document.querySelector('#capture-form').addEventListener('submit', async event =
     return;
   }
   const selectedMode = runMode.value;
+  if (selectedMode === 'live_ai' && !liveAIEnabled) {
+    feedback.textContent = '公开演示仅支持 Local Fixture，不会调用 OpenAI。';
+    feedback.hidden = false;
+    return;
+  }
   if (selectedMode === 'live_ai' && !window.confirm('这将通过服务端调用真实 OpenAI API，可能产生费用。是否继续分析？')) return;
   feedback.hidden = true;
   submitButton.disabled = true;
@@ -89,7 +113,7 @@ async function restoreCaptureFromSession() {
     document.querySelectorAll('[name="channel"]').forEach(input => {
       input.checked = state.selected_channels.includes(input.value);
     });
-    runMode.value = state.mode || 'local_fixture';
+    runMode.value = liveAIEnabled ? (state.mode || 'local_fixture') : 'local_fixture';
     updateModeLabel();
     updateCount();
   } catch (_) {
@@ -97,6 +121,9 @@ async function restoreCaptureFromSession() {
   }
 }
 
-window.addEventListener('pageshow', restoreCaptureFromSession);
+window.addEventListener('pageshow', async () => {
+  await loadRuntimeCapabilities();
+  await restoreCaptureFromSession();
+});
 updateModeLabel();
 resizeBrief();
