@@ -8,9 +8,11 @@ BriefPilot 是面向中国出海营销代理团队 Account / Planner 的 Lean MV
 
 ## 产品展示
 
-**在线 Demo：部署准备中，当前暂无公开链接。** 后续公开 Demo 将固定使用 `local_fixture`，不配置 API Key，也不会调用 OpenAI。
+**在线 Demo：[立即体验 BriefPilot](https://briefpilot-demo.onrender.com/)**
 
-下列截图来自一次受控的 **GPT-6 Luna 真实 AI 测试**，用于展示真实模型接入后的三阶段产品界面；它们不代表公开 Demo 会发起模型请求，也不代表客户、市场或法律审核结论。
+在线 Demo 固定使用 `local_fixture` 虚构测试数据，不配置 API Key，也不会调用 OpenAI。下列截图则来自一次受控的 **GPT-6 Luna 真实 AI 测试**；二者的运行模式不同。
+
+截图用于展示真实模型接入后的三阶段产品界面；它们不代表公开 Demo 会发起模型请求，也不代表客户、市场或法律审核结论。
 
 ### Capture｜保留原始需求并结构化关键信息
 
@@ -153,7 +155,7 @@ python -m pytest -q
 当前已验证结果：
 
 ```text
-78 passed
+82 passed
 ```
 
 测试覆盖纯业务规则、fixture HTTP 流程、浏览器会话隔离、Brief 保存与确认、澄清应用、DraftPackage 快照、旧稿保留、stale、审核、导出和 live AI 安全错误映射。`live_ai` 自动化边界使用依赖注入 Mock，自动化测试不会产生收费 API 请求。
@@ -164,6 +166,7 @@ python -m pytest -q
 - 同一浏览器的刷新、返回和正常阶段导航会保留当前进程内的数据。
 - 不同浏览器 Cookie 相互隔离。
 - 会话只保存在 Python 进程内存；服务重启后全部工作区和交付包失效，页面会提示重新 Capture。
+- Render 免费实例可能休眠或重启；恢复后若进程已更换，原内存会话同样会失效，需要重新 Capture。
 - 没有数据库、跨设备同步、多用户权限或长期历史中心。
 - Streamlit 版本使用自己的 Session State，与 HTTP 工作流会话不共享。
 
@@ -172,7 +175,7 @@ python -m pytest -q
 - 已使用 `gpt-6-luna` 完成一次受控真实 AI Capture → Clarify → Deliver → Markdown / JSON 导出的端到端验证。
 - 此后完成了 Clarify / Deliver 的小范围 UI 修复；最新 UI 回归使用 `local_fixture`，尚未再次执行付费真实 AI 全流程。
 - 尚未完成真实营销质量、英国/美国文化适配、客户接受度或法律合规验证。
-- 尚未部署公开生产环境，也没有认证、限流、持久化和多租户安全能力。
+- 已部署仅限 `local_fixture` 的公开体验 Demo；仍没有认证、限流、持久化和多租户安全能力，不应作为生产服务使用。
 - 尚未完成移动端、跨浏览器、读屏器和完整键盘无障碍审计。
 - 下一步应先在最新 UI 上重新执行受控真实 API 回归和演示设备 QA，再考虑持久化、权限或更细粒度的影响分析。
 
