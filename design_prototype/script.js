@@ -5,11 +5,28 @@ const dialog = document.querySelector('#demo');
 const submitButton = document.querySelector('#capture-form [type="submit"]');
 const runMode = document.querySelector('#run-mode');
 const modeTag = document.querySelector('#mode-tag');
+const modeEyebrow = document.querySelector('#mode-eyebrow');
+const compactModeQuery = window.matchMedia('(max-width: 1040px)');
+function renderModeTag() {
+  modeTag.textContent = compactModeQuery.matches ? modeTag.dataset.compactLabel : modeTag.dataset.fullLabel;
+}
 function updateModeLabel() {
   const live = runMode.value === 'live_ai';
-  modeTag.textContent = live ? '实时 AI · 仅在确认后调用' : '本地测试 API · 固定响应';
+  modeTag.dataset.fullLabel = live ? '实时 AI · LIVE AI' : '本地固定测试 · LOCAL FIXTURE';
+  modeTag.dataset.compactLabel = live ? '实时 AI' : '本地测试';
+  renderModeTag();
+  modeEyebrow.textContent = `01 / CAPTURE · ${live ? 'LIVE AI' : 'LOCAL FIXTURE'}`;
 }
-function updateCount() { count.textContent = `${Array.from(brief.value).length} 字`; feedback.hidden = true; }
+compactModeQuery.addEventListener('change', renderModeTag);
+function resizeBrief() {
+  brief.style.height = 'auto';
+  brief.style.height = `${Math.max(168, brief.scrollHeight)}px`;
+}
+function updateCount() {
+  count.textContent = `${Array.from(brief.value).length} 字`;
+  feedback.hidden = true;
+  resizeBrief();
+}
 brief.addEventListener('input', updateCount);
 runMode.addEventListener('change', updateModeLabel);
 document.querySelector('#sample').addEventListener('click', () => {
@@ -82,3 +99,4 @@ async function restoreCaptureFromSession() {
 
 window.addEventListener('pageshow', restoreCaptureFromSession);
 updateModeLabel();
+resizeBrief();

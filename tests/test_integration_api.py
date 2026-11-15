@@ -1,8 +1,19 @@
 import http.client
 import json
+import re
 import threading
 
 import pytest
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    BadRequestError,
+    ContentFilterFinishReasonError,
+    InternalServerError,
+    LengthFinishReasonError,
+    NotFoundError,
+    PermissionDeniedError,
+)
 
 from integration_api import (
     BriefDraftPatch,
@@ -10,6 +21,8 @@ from integration_api import (
     ClarificationActionRequest,
     DeliverDraftPatch,
     DeliverReviewRequest,
+    LIVE_AI_LOG_PATH,
+    LOGGER,
     LiveAIAdapter,
     SessionStore,
     WorkspaceOperationError,
@@ -544,6 +557,143 @@ def test_invalid_live_ai_response_is_rejected_safely():
     with pytest.raises(WorkspaceOperationError) as error:
         adapter.analyze(request)
     assert error.value.code == "invalid_ai_output"
+
+
+def bare_openai_exception(exception_type, **attributes):
+    error = exception_type.__new__(exception_type)
+    Exception.__init__(error, "sensitive upstream detail")
+    for name, value in attributes.items():
+        setattr(error, name, value)
+    return error
+
+
+@pytest.mark.parametrize(
+    ("exception_type", "expected_code", "expected_guidance"),
+    [
+        (APIConnectionError, "openai_connection_failed", "网络、代理或 TLS"),
+        (BadRequestError, "openai_bad_request", "模型和请求参数"),
+        (PermissionDeniedError, "openai_permission_denied", "项目和模型权限"),
+        (NotFoundError, "openai_not_found", "模型配置"),
+        (InternalServerError, "openai_server_error", "稍后手动重试"),
+        (APIStatusError, "openai_status_error", "安全日志"),
+        (LengthFinishReasonError, "openai_output_limit", "调整上限"),
+        (ContentFilterFinishReasonError, "openai_content_filtered", "检查输入内容"),
+    ],
+)
+def test_live_ai_errors_are_classified_without_sensitive_details(
+    exception_type, expected_code, expected_guidance, caplog
+):
+    upstream = bare_openai_exception(
+        exception_type,
+        status_code=418,
+        code="safe_test_code",
+        param="response_format.json_schema.schema",
+        request_id="req_safe_test",
+    )
+    adapter = LiveAIAdapter(
+        api_key_provider=lambda: "test-key-not-sent",
+        parse_function=lambda *_args: (_ for _ in ()).throw(upstream),
+    )
+
+    with caplog.at_level("ERROR", logger="briefpilot.live_ai"):
+        with pytest.raises(WorkspaceOperationError) as error:
+            adapter.analyze(capture_request())
+
+    assert error.value.code == expected_code
+    assert expected_guidance in error.value.message
+    assert error.value.correlation_id.startswith("ai-")
+    assert "sensitive upstream detail" not in error.value.message
+    assert "stage=Capture" in caplog.text
+    assert f"exception_type={exception_type.__name__}" in caplog.text
+    assert "http_status=418" in caplog.text
+    assert "openai_error_code=safe_test_code" in caplog.text
+    assert "error_param=response_format.json_schema.schema" in caplog.text
+    assert "request_id=req_safe_test" in caplog.text
+    assert f"correlation_id={error.value.correlation_id}" in caplog.text
+    assert "sensitive upstream detail" not in caplog.text
+
+    for handler in LOGGER.handlers:
+        handler.flush()
+    matching_line = next(
+        line
+        for line in reversed(LIVE_AI_LOG_PATH.read_text(encoding="utf-8").splitlines())
+        if error.value.correlation_id in line
+    )
+    assert re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z live_ai_error "
+        r"stage=Capture exception_type=[A-Za-z]+ http_status=418 "
+        r"openai_error_code=safe_test_code "
+        r"error_param=response_format\.json_schema\.schema "
+        r"request_id=req_safe_test correlation_id=ai-[0-9a-f]{12}",
+        matching_line,
+    )
+
+
+def test_live_ai_error_rejects_unsafe_error_parameter(caplog):
+    upstream = bare_openai_exception(
+        BadRequestError,
+        status_code=400,
+        code="invalid_request_error",
+        param="messages[0].content secret-value",
+        request_id="req_safe_test",
+    )
+    adapter = LiveAIAdapter(
+        api_key_provider=lambda: "test-key-not-sent",
+        parse_function=lambda *_args: (_ for _ in ()).throw(upstream),
+    )
+
+    with caplog.at_level("ERROR", logger="briefpilot.live_ai"):
+        with pytest.raises(WorkspaceOperationError):
+            adapter.analyze(capture_request())
+
+    assert "error_param= request_id=req_safe_test" in caplog.text
+    assert "secret-value" not in caplog.text
+
+
+def test_live_ai_error_payload_exposes_only_safe_diagnostic_fields(server_factory):
+    upstream = bare_openai_exception(
+        APIConnectionError,
+        status_code=None,
+        code=None,
+        request_id=None,
+    )
+    adapter = LiveAIAdapter(
+        api_key_provider=lambda: "test-key-not-sent",
+        parse_function=lambda *_args: (_ for _ in ()).throw(upstream),
+    )
+    port = server_factory(adapter)
+    request = capture_request().model_copy(update={"mode": "live_ai"})
+
+    status, payload, _ = http_json(
+        port, "POST", "/api/capture/analyze", request.model_dump(mode="json")
+    )
+
+    assert status == 502
+    assert payload["error"]["code"] == "openai_connection_failed"
+    assert payload["error"]["correlation_id"].startswith("ai-")
+    assert "sensitive upstream detail" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_live_ai_deliver_error_records_deliver_stage(caplog):
+    upstream = bare_openai_exception(
+        APIConnectionError,
+        status_code=None,
+        code=None,
+        request_id=None,
+    )
+    request = capture_request().model_copy(update={"mode": "live_ai"})
+    session = WorkspaceSession.from_capture(request, build_fixture_brief(request))
+    adapter = LiveAIAdapter(
+        api_key_provider=lambda: "test-key-not-sent",
+        generate_function=lambda *_args, **_kwargs: (_ for _ in ()).throw(upstream),
+    )
+
+    with caplog.at_level("ERROR", logger="briefpilot.live_ai"):
+        with pytest.raises(WorkspaceOperationError) as error:
+            adapter.generate(session)
+
+    assert error.value.code == "openai_connection_failed"
+    assert "stage=Deliver" in caplog.text
 
 
 def test_live_ai_missing_chinese_summary_is_not_fabricated():

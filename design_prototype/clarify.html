@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BriefPilot · 澄清与确认</title><link rel="stylesheet" href="styles.css?v=6"><link rel="stylesheet" href="workspace.css"><link rel="icon" href="data:,">
+  <title>BriefPilot · 澄清与确认</title><link rel="stylesheet" href="styles.css?v=10"><link rel="stylesheet" href="workspace.css?v=5"><link rel="icon" href="data:,">
 </head>
 <body class="work-page">
   <header class="topbar">
@@ -12,7 +12,7 @@
       <li class="active" aria-current="step"><a href="clarify.html"><span class="step-number">2</span><span>澄清与确认<small>Clarify</small></span></a></li>
       <li><a href="deliver.html"><span class="step-number">3</span><span>生成交付物<small>Deliver</small></span></a></li>
     </ol>
-    <span class="prototype-tag" id="mode-tag">正在读取运行模式</span>
+    <span class="prototype-tag" id="mode-tag" data-compact-label="读取模式">正在读取运行模式</span>
   </header>
   <main class="work-main">
     <section class="work-heading">
@@ -43,7 +43,7 @@
           </section>
         </div>
         <div id="impact-bar" class="impact-bar" hidden><div><strong>变更影响提示</strong><p id="impact-copy">关键字段已修改；后续生成内容需要使用保存后的新版本。</p></div><button type="button" class="text-button" id="review-impact">查看影响</button></div>
-        <footer class="panel-actions"><span id="clarify-feedback">正在连接本地工作状态…</span><div><button type="button" class="button secondary" id="save-draft">保存草稿</button><button type="button" class="button secondary" id="confirm-brief">确认当前 Brief</button><button type="button" class="button primary compact-primary" id="enter-deliver" disabled>生成测试交付物并进入</button></div></footer>
+        <footer class="panel-actions"><span id="clarify-feedback" role="status" aria-live="polite">正在连接本地工作状态…</span><div><button type="button" class="button secondary" id="save-draft">保存草稿</button><button type="button" class="button secondary" id="confirm-brief">确认当前 Brief</button><button type="button" class="button primary compact-primary" id="enter-deliver" disabled>生成测试交付物并进入</button></div></footer>
       </div>
 
       <aside class="question-panel panel">
@@ -53,9 +53,9 @@
       </aside>
     </section>
   </main>
-  <dialog id="confirm-dialog"><div class="dialog-kicker">人工确认 · 本地工作状态</div><h2>确认当前 Brief？</h2><p>仍有 <strong id="unresolved-count">0</strong> 项未解决。确认表示你认可当前已保存版本可继续使用，不代表客户批准，也不代表其中声明已完成事实核实。</p><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-confirm">返回检查</button><button type="button" class="button primary" id="complete-confirm">继续确认</button></div></dialog>
-  <dialog id="impact-dialog"><div class="dialog-kicker">Change Impact Review</div><h2>关键字段已经变化</h2><p>营销目标、目标市场、目标受众或核心信息保存变更后，Python 后端会保留现有交付物，并将受影响的 current 稿标记为 stale、提示重新审核。</p><button type="button" class="button primary" id="close-impact">知道了</button></dialog>
-  <div class="toast" id="toast" role="status" hidden></div>
-  <script src="clarify.js?v=5"></script>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-dialog-title"><div class="dialog-kicker">人工确认 · 本地工作状态</div><h2 id="confirm-dialog-title">确认当前 Brief？</h2><p>仍有 <strong id="unresolved-count">0</strong> 项未解决。确认表示你认可当前已保存版本可继续使用，不代表客户批准，也不代表其中声明已完成事实核实。</p><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-confirm">返回检查</button><button type="button" class="button primary" id="complete-confirm">继续确认</button></div></dialog>
+  <dialog id="impact-dialog" aria-labelledby="impact-dialog-title"><div class="dialog-kicker">变更影响检查</div><h2 id="impact-dialog-title">关键字段已经变化</h2><p>营销目标、目标市场、目标受众或核心信息保存变更后，Python 后端会保留现有交付物，并将受影响的当前稿标记为需复审、提示重新审核。</p><button type="button" class="button primary" id="close-impact">知道了</button></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="clarify.js?v=12"></script>
 </body>
 </html>

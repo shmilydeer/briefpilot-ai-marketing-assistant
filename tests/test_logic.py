@@ -5,6 +5,7 @@ from models import (
     GeneratedChannelDraft, GeneratedDraftPackage,
 )
 from logic import (
+    BRIEF_MAX_COMPLETION_TOKENS, DRAFT_MAX_COMPLETION_TOKENS,
     quality_checks, export_markdown, parse_brief, generate_drafts,
     changed_brief_fields, change_impact_fields, save_brief_revision,
     update_clarification, apply_clarification_answer,
@@ -72,6 +73,7 @@ def test_parse_brief_validates_structured_output_with_pydantic_schema():
     )
     assert isinstance(brief, Brief)
     assert client.calls[0]["response_format"] is BriefExtraction
+    assert client.calls[0]["max_completion_tokens"] == BRIEF_MAX_COMPLETION_TOKENS
     assert brief.field_sources["brand"].source_type == "customer_original"
     assert brief.field_sources["brand"].verification_status == "unverified"
 
@@ -100,9 +102,41 @@ def test_generate_drafts_binds_english_and_chinese_structured_fields():
         client=client,
     )
     assert client.calls[0]["response_format"] is GeneratedDraftPackage
+    assert client.calls[0]["max_completion_tokens"] == DRAFT_MAX_COMPLETION_TOKENS
     assert package.source_brief_revision == 4
     assert package.drafts[0].body == "Carry it easily through the working day."
     assert package.drafts[0].chinese_summary == "轻松随行，陪伴日常通勤。"
+
+
+def test_live_openai_clients_disable_automatic_retries(monkeypatch):
+    extraction = BriefExtraction(**sample_brief().model_dump(exclude={"field_sources"}))
+    generated = GeneratedDraftPackage(
+        drafts=[GeneratedChannelDraft(
+            channel="TikTok",
+            hook="Made for the commute.",
+            body="Carry it easily through the working day.",
+            call_to_action="Explore the travel cup.",
+            visual_direction="Natural-light commute scenes.",
+            hashtags=["#DailyCarry"],
+            notes_for_review=[],
+            chinese_summary="轻松随行，陪伴日常通勤。",
+        )],
+        claims_to_verify=[],
+        general_review_notes=[],
+    )
+    parsed_outputs = [extraction, generated]
+    client_configs = []
+
+    def fake_openai(**kwargs):
+        client_configs.append(kwargs)
+        return FakeStructuredClient(parsed_outputs.pop(0))
+
+    monkeypatch.setattr("openai.OpenAI", fake_openai)
+    parse_brief("CupCo plans a UK campaign for Commuters.", "mock-key-not-sent")
+    generate_drafts(sample_brief(), ["TikTok"], "mock-key-not-sent")
+
+    assert [config["max_retries"] for config in client_configs] == [0, 0]
+    assert [config["timeout"] for config in client_configs] == [35.0, 45.0]
 
 def test_brief_changes_only_include_substantive_editable_fields():
     previous = sample_brief()

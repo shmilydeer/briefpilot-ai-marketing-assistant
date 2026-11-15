@@ -8,7 +8,7 @@
 Capture → Clarify → Deliver → 人工编辑与审核 → Markdown / JSON 导出
 ```
 
-服务同时托管 `design_prototype/` 中的三个高保真页面与 JSON API。默认模式为 `local_fixture`；`live_ai` 代码适配已经实现并由 Mock 覆盖，但尚未完成真实 OpenAI 的三阶段端到端验证。
+服务同时托管 `design_prototype/` 中的三个高保真页面与 JSON API。默认模式为 `local_fixture`，无需 API Key；`live_ai` 需要使用者在服务端自行配置有效密钥。适配层已由 Mock 覆盖，并曾完成一次受控真实 AI 三阶段端到端验证；最近的响应式 UI 修改后尚未重新执行真实 AI 全流程回归。
 
 ## 启动
 
@@ -58,6 +58,7 @@ index.html / clarify.html / deliver.html
 ### `local_fixture`
 
 - 默认模式，不调用 OpenAI。
+- 无需配置 API Key。
 - 使用明确标注的虚构英国/美国随行杯 Brief 和渠道稿。
 - HTTP、会话、版本、确认、stale、审核和导出仍走真实后端代码。
 - fixture 结果不冒充模型输出。
@@ -150,13 +151,14 @@ Markdown 和 JSON 都由服务端生成，并使用所选 DraftPackage 的 Brief
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-最近一次核心 checkpoint 验证结果为 `51 passed`。测试覆盖 fixture 完整 API 流程、会话隔离、失败状态保留、版本、确认、澄清、快照、stale、审核、旧稿和导出；`live_ai` 成功与失败路径使用注入 Mock。
+当前验证结果为 `63 passed`。测试覆盖 fixture 完整 API 流程、会话隔离、失败状态保留、版本、确认、澄清、快照、stale、审核、旧稿、导出和 live AI 安全错误映射；`live_ai` 成功与失败路径使用注入 Mock。
 
 Mock 测试证明适配边界和状态保护按预期工作，不证明真实模型质量、额度、网络或 structured output 的端到端表现。
 
-## 真实 AI 验证仍缺少的证据
+## 真实 AI 验证状态与仍缺少的证据
 
-- 使用操作者明确授权的 API Key 运行 Capture → Clarify → Deliver。
+- 此前已使用操作者明确授权的 API Key 完成 Capture → Clarify → Deliver → Markdown / JSON 导出验证。
+- 最近的响应式 UI 修改后，尚未重新执行完整真实 AI 回归。
 - 记录 UK / US 英文表达及中文释义的人工一致性判断。
 - 验证认证、额度、超时和模型校验错误在真实服务上的信息表现。
 - 确认失败前后 Workspace 与旧稿在真实请求中的状态不变。

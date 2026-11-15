@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BriefPilot · 生成与审核交付物</title><link rel="stylesheet" href="styles.css?v=6"><link rel="stylesheet" href="workspace.css"><link rel="icon" href="data:,">
+  <title>BriefPilot · 生成与审核交付物</title><link rel="stylesheet" href="styles.css?v=10"><link rel="stylesheet" href="workspace.css?v=5"><link rel="icon" href="data:,">
 </head>
 <body class="work-page deliver-page">
   <header class="topbar">
@@ -12,7 +12,7 @@
       <li class="done"><a href="clarify.html"><span class="step-number">2</span><span>澄清与确认<small>Clarify</small></span></a></li>
       <li class="active" aria-current="step"><a href="deliver.html"><span class="step-number">3</span><span>生成交付物<small>Deliver</small></span></a></li>
     </ol>
-    <span class="prototype-tag" id="mode-tag">正在读取运行模式</span>
+    <span class="prototype-tag" id="mode-tag" data-compact-label="读取模式">正在读取运行模式</span>
   </header>
   <main class="work-main">
     <section class="work-heading deliver-heading">
@@ -58,8 +58,8 @@
       <footer class="deliver-actions"><div><strong id="footer-version">尚未选择交付物</strong><span id="footer-mode">读取运行模式中 · 不代表客户批准</span></div><div><button type="button" class="button secondary" id="mark-reviewed">标记内部审核完成</button><button type="button" class="button primary compact-primary" id="export-package">导出交付物</button></div></footer>
     </section>
   </main>
-  <dialog id="export-dialog"><div class="dialog-kicker">由 Python 后端生成</div><h2>选择导出格式</h2><p>Markdown 与 JSON 均包含 Brief 快照版本、审核状态、current / stale、未解决事项和风险提示。</p><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-export">取消</button><button type="button" class="button secondary" id="download-json">下载 JSON</button><button type="button" class="button primary" id="download-markdown">下载 Markdown</button></div></dialog>
-  <div class="toast" id="toast" role="status" hidden></div>
-  <script src="deliver.js?v=3"></script>
+  <dialog id="export-dialog" aria-labelledby="export-dialog-title"><div class="dialog-kicker">由 Python 后端生成</div><h2 id="export-dialog-title">选择导出格式</h2><p>Markdown 与 JSON 均包含 Brief 快照版本、审核状态、current / stale、未解决事项和风险提示。</p><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-export">取消</button><button type="button" class="button secondary" id="download-json">下载 JSON</button><button type="button" class="button primary" id="download-markdown">下载 Markdown</button></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="deliver.js?v=11"></script>
 </body>
 </html>

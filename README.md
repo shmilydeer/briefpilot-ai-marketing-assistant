@@ -78,13 +78,14 @@ streamlit run app.py
 ### `local_fixture`（默认）
 
 - 使用明确标注的虚构英国/美国随行杯测试数据。
-- 不调用 OpenAI，也不会产生模型费用。
+- 不需要 API Key，不调用 OpenAI，也不会产生模型费用。
 - 前端、HTTP API、会话、版本、确认、审核、stale 和导出均走真实本地代码。
 - 固定测试内容不应被描述为模型输出或客户批准内容。
 
 ### `live_ai`（显式选择）
 
 - 只有用户在 Capture 选择实时模式并再次确认操作后，服务端才调用 OpenAI。
+- 使用者需要在服务端进程环境中自行配置有效的 `OPENAI_API_KEY`。
 - Capture 复用 `parse_brief`；Deliver 复用 `generate_drafts`。
 - 缺少密钥、认证失败、额度不足、超时或模型校验失败时返回明确错误，不会静默降级成 fixture。
 - 失败不会删除现有输入、Brief 或旧交付包。
@@ -104,13 +105,13 @@ python integration_api.py
 python -m pytest -q
 ```
 
-Git Checkpoint 01 前的已验证结果：
+当前已验证结果：
 
 ```text
-51 passed
+63 passed
 ```
 
-测试覆盖纯业务规则、fixture HTTP 流程、浏览器会话隔离、Brief 保存与确认、澄清应用、DraftPackage 快照、旧稿保留、stale、审核和导出。`live_ai` 边界使用依赖注入 Mock 验证，不等同于真实模型端到端测试。自动化测试不应产生收费 API 请求。
+测试覆盖纯业务规则、fixture HTTP 流程、浏览器会话隔离、Brief 保存与确认、澄清应用、DraftPackage 快照、旧稿保留、stale、审核、导出和 live AI 安全错误映射。`live_ai` 自动化边界使用依赖注入 Mock，自动化测试不会产生收费 API 请求。
 
 ## 会话与持久化边界
 
@@ -123,11 +124,12 @@ Git Checkpoint 01 前的已验证结果：
 
 ## 尚未验证与后续方向
 
-- 尚未完成真实 OpenAI API 的 Capture → Deliver 端到端验收；当前证据是 Mock 适配测试。
+- 此前已完成一次受控真实 AI Capture → Clarify → Deliver → Markdown / JSON 导出的端到端验证。
+- 最近的响应式 UI 修改完成后，尚未重新执行真实 AI 全流程回归；当前发布回归以 `local_fixture` 和 Mock 自动化为准。
 - 尚未完成真实营销质量、英国/美国文化适配、客户接受度或法律合规验证。
 - 尚未部署公开生产环境，也没有认证、限流、持久化和多租户安全能力。
 - 尚未完成移动端、跨浏览器、读屏器和完整键盘无障碍审计。
-- 下一步应先进行受控真实 API 验证和演示设备 QA，再考虑持久化、权限或更细粒度的影响分析。
+- 下一步应先在最新 UI 上重新执行受控真实 API 回归和演示设备 QA，再考虑持久化、权限或更细粒度的影响分析。
 
 ## 非目标
 

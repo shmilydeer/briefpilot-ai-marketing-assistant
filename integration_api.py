@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -49,14 +51,41 @@ from models import (
 )
 
 
+LOGGER = logging.getLogger("briefpilot.live_ai")
 PROJECT_ROOT = Path(__file__).resolve().parent
 PROTOTYPE_DIR = PROJECT_ROOT / "design_prototype"
+LIVE_AI_LOG_PATH = PROJECT_ROOT / "test_exports" / "live_ai_errors.log"
 MAX_REQUEST_BYTES = 64 * 1024
 SESSION_COOKIE = "briefpilot_session"
 EDITABLE_BRIEF_FIELDS = {
     "product", "campaign_goal", "audience", "key_message", "region", "tone", "constraints"
 }
 RunMode = Literal["local_fixture", "live_ai"]
+
+
+def _configure_live_ai_logger() -> None:
+    """Persist only allow-listed OpenAI diagnostic metadata."""
+    LIVE_AI_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    target = LIVE_AI_LOG_PATH.resolve()
+    for handler in LOGGER.handlers:
+        if (
+            isinstance(handler, logging.FileHandler)
+            and Path(handler.baseFilename).resolve() == target
+        ):
+            return
+    handler = logging.FileHandler(LIVE_AI_LOG_PATH, encoding="utf-8", delay=True)
+    formatter = logging.Formatter(
+        "%(asctime)sZ %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    )
+    formatter.converter = time.gmtime
+    handler.setFormatter(formatter)
+    handler.setLevel(logging.ERROR)
+    LOGGER.addHandler(handler)
+    LOGGER.setLevel(logging.ERROR)
+
+
+_configure_live_ai_logger()
 
 
 class CaptureAnalyzeRequest(BaseModel):
@@ -160,11 +189,18 @@ CaptureAnalyzeResponse = WorkspaceResponse
 
 
 class WorkspaceOperationError(Exception):
-    def __init__(self, status: HTTPStatus, code: str, message: str):
+    def __init__(
+        self,
+        status: HTTPStatus,
+        code: str,
+        message: str,
+        correlation_id: str = "",
+    ):
         super().__init__(message)
         self.status = status
         self.code = code
         self.message = message
+        self.correlation_id = correlation_id
 
 
 class LiveAIAdapter:
@@ -192,7 +228,7 @@ class LiveAIAdapter:
             parsed = self._parse_function(request.raw_text, api_key)
             brief = Brief.model_validate(parsed)
         except Exception as exc:
-            raise self._safe_error(exc, "解析") from exc
+            raise self._safe_error(exc, "Capture") from exc
 
         sources = build_field_sources(brief, request.raw_text)
         for field_name, source in list(sources.items()):
@@ -233,7 +269,7 @@ class LiveAIAdapter:
             )
             package = DraftPackage.model_validate(generated)
         except Exception as exc:
-            raise self._safe_error(exc, "生成") from exc
+            raise self._safe_error(exc, "Deliver") from exc
 
         expected = sorted(session.selected_channels)
         if sorted(item.channel for item in package.drafts) != expected:
@@ -263,21 +299,97 @@ class LiveAIAdapter:
         return api_key
 
     @staticmethod
-    def _safe_error(exc: Exception, operation: str) -> WorkspaceOperationError:
+    def _safe_error(exc: Exception, stage: str) -> WorkspaceOperationError:
         if isinstance(exc, WorkspaceOperationError):
             return exc
-        name = type(exc).__name__
-        if name == "AuthenticationError":
-            code, message = "openai_authentication_failed", "OpenAI 认证失败，请检查服务端配置。"
-        elif name == "RateLimitError":
-            code, message = "openai_rate_limited", "OpenAI 请求受到额度或速率限制，请稍后重试。"
-        elif name in {"APITimeoutError", "TimeoutError"}:
-            code, message = "openai_timeout", "OpenAI 请求超时，现有工作状态未改变。"
+        from openai import (
+            APIConnectionError,
+            APIStatusError,
+            APITimeoutError,
+            AuthenticationError,
+            BadRequestError,
+            ContentFilterFinishReasonError,
+            InternalServerError,
+            LengthFinishReasonError,
+            NotFoundError,
+            PermissionDeniedError,
+            RateLimitError,
+        )
+
+        correlation_id = f"ai-{uuid.uuid4().hex[:12]}"
+        exception_type = type(exc).__name__
+
+        def safe_metadata(value: object) -> str:
+            if value is None:
+                return ""
+            return re.sub(r"[^A-Za-z0-9._:/-]", "_", str(value))[:128]
+
+        def safe_parameter_path(value: object) -> str:
+            if value is None:
+                return ""
+            candidate = str(value).strip()
+            if not re.fullmatch(r"[A-Za-z0-9_.\[\]-]{1,128}", candidate):
+                return ""
+            return candidate
+
+        LOGGER.error(
+            "live_ai_error stage=%s exception_type=%s http_status=%s "
+            "openai_error_code=%s error_param=%s request_id=%s correlation_id=%s",
+            safe_metadata(stage),
+            safe_metadata(exception_type),
+            safe_metadata(getattr(exc, "status_code", "")),
+            safe_metadata(getattr(exc, "code", "")),
+            safe_parameter_path(getattr(exc, "param", "")),
+            safe_metadata(getattr(exc, "request_id", "")),
+            correlation_id,
+        )
+
+        if isinstance(exc, AuthenticationError):
+            code = "openai_authentication_failed"
+            message = "OpenAI 认证失败，请检查服务端密钥配置后手动重试。"
+        elif isinstance(exc, RateLimitError):
+            code = "openai_rate_limited"
+            message = "OpenAI 请求受到额度或速率限制，请检查账户用量后稍后手动重试。"
+        elif isinstance(exc, (APITimeoutError, TimeoutError)):
+            code = "openai_timeout"
+            message = "OpenAI 请求超时，请检查网络后手动重试；现有工作状态未改变。"
+        elif isinstance(exc, APIConnectionError):
+            code = "openai_connection_failed"
+            message = "无法连接 OpenAI，请检查网络、代理或 TLS 配置后手动重试。"
+        elif isinstance(exc, BadRequestError):
+            code = "openai_bad_request"
+            message = "OpenAI 拒绝了请求，请检查模型和请求参数。"
+        elif isinstance(exc, PermissionDeniedError):
+            code = "openai_permission_denied"
+            message = "当前 OpenAI 项目无权执行此请求，请检查项目和模型权限。"
+        elif isinstance(exc, NotFoundError):
+            code = "openai_not_found"
+            message = "当前模型或接口不可用，请检查模型配置。"
+        elif isinstance(exc, InternalServerError):
+            code = "openai_server_error"
+            message = "OpenAI 服务暂时异常，请稍后手动重试。"
+        elif isinstance(exc, APIStatusError):
+            code = "openai_status_error"
+            message = "OpenAI 返回未分类的服务错误，请根据参考编号检查安全日志。"
+        elif isinstance(exc, LengthFinishReasonError):
+            code = "openai_output_limit"
+            message = "模型输出达到上限，结构化结果未完成；请缩短输入或调整上限后手动重试。"
+        elif isinstance(exc, ContentFilterFinishReasonError):
+            code = "openai_content_filtered"
+            message = "模型输出被安全策略终止，请检查输入内容后手动重试。"
         elif isinstance(exc, (ValidationError, ValueError, TypeError)):
-            code, message = "invalid_ai_output", "AI 返回内容未通过结构化校验，现有工作状态未改变。"
+            code = "invalid_ai_output"
+            message = "AI 返回内容未通过结构化校验，请检查输入后手动重试。"
         else:
-            code, message = "openai_request_failed", "OpenAI 请求失败，现有工作状态未改变。"
-        return WorkspaceOperationError(HTTPStatus.BAD_GATEWAY, code, f"{operation}失败：{message}")
+            code = "openai_request_failed"
+            message = "OpenAI 请求失败，请根据参考编号检查安全日志后手动重试。"
+        stage_label = "需求解析" if stage == "Capture" else "交付生成"
+        return WorkspaceOperationError(
+            HTTPStatus.BAD_GATEWAY,
+            code,
+            f"{stage_label}失败：{message}参考编号：{correlation_id}。",
+            correlation_id,
+        )
 
 
 def _fixture_sources(brief: Brief, raw_text: str, market: str) -> dict[str, FieldSource]:
@@ -813,9 +925,12 @@ class LocalIntegrationHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _write_error(self, error: WorkspaceOperationError) -> None:
+        payload = {"code": error.code, "message": error.message}
+        if error.correlation_id:
+            payload["correlation_id"] = error.correlation_id
         self._write_json(
             error.status,
-            {"error": {"code": error.code, "message": error.message}},
+            {"error": payload},
         )
 
     def _write_download(self, body: bytes, filename: str, content_type: str) -> None:

@@ -19,6 +19,15 @@ const briefFieldLabels = {
   key_message: '核心信息', region: '目标市场', tone: '表达语气', constraints: '内容限制',
 };
 let workspace = null;
+let requestInFlight = false;
+const dialogTriggers = new WeakMap();
+const compactModeQuery = window.matchMedia('(max-width: 1040px)');
+
+function renderModeTag() {
+  const modeTag = document.querySelector('#mode-tag');
+  modeTag.textContent = compactModeQuery.matches ? modeTag.dataset.compactLabel : modeTag.dataset.fullLabel;
+}
+compactModeQuery.addEventListener('change', renderModeTag);
 
 function showToast(message) {
   toast.textContent = message;
@@ -39,6 +48,44 @@ async function api(path, options = {}) {
 
 function setControlsDisabled(disabled) {
   document.querySelectorAll('input, button').forEach(element => { element.disabled = disabled; });
+}
+
+function syncActionAvailability() {
+  const save = document.querySelector('#save-draft');
+  const confirm = document.querySelector('#confirm-brief');
+  const enterDeliver = document.querySelector('#enter-deliver');
+  save.disabled = requestInFlight || !workspace || !workspace.dirty;
+  confirm.disabled = requestInFlight || !workspace || workspace.dirty || workspace.status === 'confirmed';
+  enterDeliver.disabled = requestInFlight || !workspace || workspace.status !== 'confirmed' || workspace.dirty;
+  document.querySelectorAll('.question-actions button, .suggestion button').forEach(button => {
+    button.disabled = requestInFlight;
+  });
+}
+
+function setBusy(isBusy) {
+  requestInFlight = isBusy;
+  document.body.toggleAttribute('aria-busy', isBusy);
+  syncActionAvailability();
+}
+
+function openDialog(dialog, trigger) {
+  dialogTriggers.set(dialog, trigger);
+  dialog.showModal();
+}
+
+function restoreDialogFocus(dialog) {
+  const trigger = dialogTriggers.get(dialog);
+  if (trigger?.isConnected && !trigger.disabled) {
+    trigger.focus();
+    return;
+  }
+  feedback.setAttribute('tabindex', '-1');
+  feedback.focus();
+}
+
+function closeDialog(dialog) {
+  dialog.close();
+  window.setTimeout(() => restoreDialogFocus(dialog), 0);
 }
 
 function renderSource(fieldName, source) {
@@ -88,6 +135,7 @@ function renderQuestions(questions, isDirty) {
     number.textContent = String(index + 1);
     const copy = document.createElement('div');
     const strong = document.createElement('strong');
+    strong.id = `question-title-${question.id}`;
     strong.textContent = question.question;
     const small = document.createElement('small');
     small.textContent = `关联字段 · ${briefFieldLabels[question.field_name] || '一般事项'}`;
@@ -96,8 +144,14 @@ function renderQuestions(questions, isDirty) {
 
     const input = document.createElement('input');
     input.className = 'answer-input';
+    input.id = `question-answer-${question.id}`;
+    input.setAttribute('aria-labelledby', strong.id);
     input.placeholder = '输入客户回答';
     input.value = question.answer || '';
+    const inputLabel = document.createElement('label');
+    inputLabel.className = 'sr-only';
+    inputLabel.htmlFor = input.id;
+    inputLabel.textContent = `回答：${question.question}`;
 
     const actions = document.createElement('div');
     actions.className = 'question-actions';
@@ -114,9 +168,12 @@ function renderQuestions(questions, isDirty) {
     if (fieldInputIds[question.field_name]) suggestion.append(makeButton('应用建议', 'apply'));
 
     const stateLabel = document.createElement('small');
-    stateLabel.className = 'question-state';
+    stateLabel.className = `question-state ${question.status}`;
     stateLabel.textContent = {open: '待处理', answered: '已记录，尚未应用', deferred: '已暂缓', not_applicable: '不适用', applied: isDirty ? '已应用，等待保存' : '已应用'}[question.status] || question.status;
-    card.append(title, input, actions, suggestion, stateLabel);
+    const footer = document.createElement('div');
+    footer.className = 'question-footer';
+    footer.append(actions, stateLabel);
+    card.append(title, inputLabel, input, footer, suggestion);
     container.append(card);
   });
 }
@@ -125,7 +182,10 @@ function render(state, message = '') {
   workspace = state;
   setControlsDisabled(false);
   const liveMode = state.mode === 'live_ai';
-  document.querySelector('#mode-tag').textContent = liveMode ? '实时 AI · 服务端调用' : '本地测试 · 固定响应';
+  const modeTag = document.querySelector('#mode-tag');
+  modeTag.dataset.fullLabel = liveMode ? '实时 AI · LIVE AI' : '本地固定测试 · LOCAL FIXTURE';
+  modeTag.dataset.compactLabel = liveMode ? '实时 AI' : '本地测试';
+  renderModeTag();
   document.querySelector('#mode-eyebrow').textContent = `02 / CLARIFY · ${liveMode ? 'LIVE AI' : 'LOCAL FIXTURE'}`;
   Object.entries(fieldInputIds).forEach(([fieldName, inputId]) => {
     document.querySelector(`#${inputId}`).value = state.brief[fieldName] || '';
@@ -134,22 +194,31 @@ function render(state, message = '') {
   document.querySelector('#channels').value = state.selected_channels.join(' · ');
   document.querySelector('#brief-title').textContent = `${state.brief.region || '待识别市场'} · ${state.brief.product || '待确认产品'}`;
   document.querySelector('#brief-version').textContent = statusText(state);
-  document.querySelector('#save-state').textContent = state.dirty ? '有未保存修改 · 已保存在本地会话' : state.fixture_notice;
+  document.querySelector('#save-state').textContent = state.dirty
+    ? '已暂存到本地会话 · 尚未保存为 Brief 版本'
+    : state.status === 'confirmed'
+      ? `Brief v${state.revision}.0 已保存并人工确认`
+      : state.status === 'needs_reconfirmation'
+        ? `Brief v${state.revision}.0 已保存 · 待重新确认`
+        : `Brief v${state.revision}.0 已保存 · 尚未人工确认`;
   document.querySelector('#unresolved-count').textContent = state.unresolved_items.length;
   const verified = Object.values(state.brief.field_sources).filter(item => item.verification_status === 'verified').length;
   document.querySelector('#confirmed-count').textContent = `${verified} / 7`;
   impactBar.hidden = state.impact_fields.length === 0;
-  if (state.impact_fields.length) document.querySelector('#impact-copy').textContent = state.dirty
-    ? `关键字段 ${state.impact_fields.join('、')} 已修改；保存后将按 Python 规则更新版本与确认状态。`
-    : `关键字段 ${state.impact_fields.join('、')} 的变化已保存；当前 Brief 需要重新确认。`;
+  if (state.impact_fields.length) {
+    const impactLabels = state.impact_fields.map(field => briefFieldLabels[field] || field).join('、');
+    document.querySelector('#impact-copy').textContent = state.dirty
+      ? `关键字段 ${impactLabels} 已修改；保存后将更新版本与确认状态。`
+      : `关键字段 ${impactLabels} 的变化已保存；当前 Brief 需要重新确认。`;
+  }
   const unresolved = state.questions.filter(item => ['open', 'deferred'].includes(item.status)).length;
   document.querySelector('#question-count').textContent = unresolved ? `${unresolved} 项待处理` : '全部已处理';
   const enterDeliver = document.querySelector('#enter-deliver');
-  enterDeliver.disabled = state.status !== 'confirmed' || state.dirty;
   enterDeliver.textContent = liveMode ? '调用 AI 生成并进入' : '生成测试交付物并进入';
-  enterDeliver.title = enterDeliver.disabled ? '请先保存并人工确认当前 Brief' : (liveMode ? '将通过服务端调用 OpenAI，可能产生费用' : '生成固定本地测试交付物');
+  enterDeliver.title = state.status !== 'confirmed' || state.dirty ? '请先保存并人工确认当前 Brief' : (liveMode ? '将通过服务端调用 OpenAI，可能产生费用' : '生成固定本地测试交付物');
   renderQuestions(state.questions, state.dirty);
-  feedback.textContent = message || (state.dirty ? '编辑已进入本地会话，尚未形成新版本。' : '当前页面与 Python 工作状态一致。');
+  feedback.textContent = message || (state.dirty ? '修改已暂存到本地会话，尚未保存为 Brief 版本。' : `当前显示已保存的 Brief v${state.revision}.0。`);
+  syncActionAvailability();
 }
 
 async function loadWorkspace() {
@@ -165,6 +234,8 @@ async function loadWorkspace() {
 }
 
 editableInputs.forEach(input => input.addEventListener('change', async () => {
+  if (requestInFlight) return;
+  setBusy(true);
   try {
     const state = await api('/api/brief/draft', {
       method: 'PATCH',
@@ -174,6 +245,8 @@ editableInputs.forEach(input => input.addEventListener('change', async () => {
   } catch (error) {
     feedback.textContent = `更新失败：${error.message}。已保存的工作状态未改变。`;
     showToast('更新失败，已保存状态仍保留。');
+  } finally {
+    setBusy(false);
   }
 }));
 
@@ -183,6 +256,8 @@ document.querySelector('#questions').addEventListener('click', async event => {
   const card = button.closest('.question');
   const action = button.dataset.action;
   const input = card.querySelector('.answer-input');
+  if (requestInFlight) return;
+  setBusy(true);
   try {
     let state;
     if (action === 'apply') {
@@ -203,10 +278,14 @@ document.querySelector('#questions').addEventListener('click', async event => {
     }
   } catch (error) {
     showToast(error.message);
+  } finally {
+    setBusy(false);
   }
 });
 
 document.querySelector('#save-draft').addEventListener('click', async () => {
+  if (requestInFlight || !workspace?.dirty) return;
+  setBusy(true);
   try {
     const before = workspace?.revision;
     const state = await api('/api/brief/save', {method: 'POST'});
@@ -215,27 +294,41 @@ document.querySelector('#save-draft').addEventListener('click', async () => {
     showToast(message);
   } catch (error) {
     showToast(`保存失败：${error.message}`);
+  } finally {
+    setBusy(false);
   }
 });
 
-document.querySelector('#confirm-brief').addEventListener('click', () => {
+const confirmDialog = document.querySelector('#confirm-dialog');
+const impactDialog = document.querySelector('#impact-dialog');
+confirmDialog.addEventListener('close', () => restoreDialogFocus(confirmDialog));
+impactDialog.addEventListener('close', () => restoreDialogFocus(impactDialog));
+
+document.querySelector('#confirm-brief').addEventListener('click', event => {
+  if (workspace?.dirty || requestInFlight) return;
   document.querySelector('#unresolved-count').textContent = workspace?.unresolved_items.length || 0;
-  document.querySelector('#confirm-dialog').showModal();
+  openDialog(confirmDialog, event.currentTarget);
 });
-document.querySelector('#cancel-confirm').addEventListener('click', () => document.querySelector('#confirm-dialog').close());
+document.querySelector('#cancel-confirm').addEventListener('click', () => closeDialog(confirmDialog));
 document.querySelector('#complete-confirm').addEventListener('click', async () => {
+  if (requestInFlight) return;
+  setBusy(true);
   try {
     const state = await api('/api/brief/confirm', {method: 'POST'});
-    document.querySelector('#confirm-dialog').close();
+    closeDialog(confirmDialog);
     render(state, '当前已保存版本已人工确认；这不代表客户批准或事实核实。');
     showToast('当前 Brief 已人工确认。');
   } catch (error) {
-    document.querySelector('#confirm-dialog').close();
+    closeDialog(confirmDialog);
     showToast(error.message);
+  } finally {
+    setBusy(false);
   }
 });
 
 document.querySelector('#enter-deliver').addEventListener('click', async () => {
+  if (requestInFlight || workspace?.status !== 'confirmed' || workspace?.dirty) return;
+  setBusy(true);
   try {
     if (workspace?.mode === 'live_ai' && !window.confirm('这将通过服务端调用真实 OpenAI API 生成工作稿，可能产生费用。是否继续？')) return;
     const state = await api('/api/deliver/generate', {method: 'POST'});
@@ -243,9 +336,11 @@ document.querySelector('#enter-deliver').addEventListener('click', async () => {
     window.location.assign(`/deliver.html?package=${encodeURIComponent(state.package.package_id)}`);
   } catch (error) {
     showToast(error.message);
+  } finally {
+    setBusy(false);
   }
 });
 
-document.querySelector('#review-impact').addEventListener('click', () => document.querySelector('#impact-dialog').showModal());
-document.querySelector('#close-impact').addEventListener('click', () => document.querySelector('#impact-dialog').close());
+document.querySelector('#review-impact').addEventListener('click', event => openDialog(impactDialog, event.currentTarget));
+document.querySelector('#close-impact').addEventListener('click', () => closeDialog(impactDialog));
 window.addEventListener('pageshow', loadWorkspace);

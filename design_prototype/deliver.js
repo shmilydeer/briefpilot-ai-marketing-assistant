@@ -2,6 +2,40 @@ const tabs = [...document.querySelectorAll('[role="tab"]')];
 const panels = [...document.querySelectorAll('[role="tabpanel"]')];
 const toast = document.querySelector('#toast');
 let delivery = null;
+let requestInFlight = false;
+const compactModeQuery = window.matchMedia('(max-width: 1040px)');
+
+function renderModeTag() {
+  const modeTag = document.querySelector('#mode-tag');
+  modeTag.textContent = compactModeQuery.matches ? modeTag.dataset.compactLabel : modeTag.dataset.fullLabel;
+}
+compactModeQuery.addEventListener('change', renderModeTag);
+const exportDialog = document.querySelector('#export-dialog');
+let exportDialogTrigger = null;
+const briefFieldLabels = {
+  product: '产品', campaign_goal: '营销目标', audience: '目标受众',
+  key_message: '核心信息', region: '目标市场', tone: '表达语气', constraints: '内容限制',
+};
+
+function closeExportDialog() {
+  exportDialog.close();
+  window.setTimeout(() => {
+    if (exportDialogTrigger?.isConnected && !exportDialogTrigger.disabled) exportDialogTrigger.focus();
+  }, 0);
+}
+
+function setBusy(isBusy) {
+  requestInFlight = isBusy;
+  document.body.toggleAttribute('aria-busy', isBusy);
+  ['#generate-deliver', '#mark-reviewed', '#export-package', '#review-status'].forEach(selector => {
+    const control = document.querySelector(selector);
+    if (control) control.disabled = isBusy || (!delivery?.package && selector !== '#generate-deliver');
+  });
+  if (!isBusy && delivery) {
+    document.querySelector('#generate-deliver').disabled = !delivery.can_generate;
+    setPackageControlsDisabled(!delivery.package);
+  }
+}
 
 function showToast(message) {
   toast.textContent = message;
@@ -21,7 +55,10 @@ async function api(path, options = {}) {
 }
 
 function activateTab(tab) {
-  tabs.forEach(item => item.setAttribute('aria-selected', String(item === tab)));
+  tabs.forEach(item => {
+    item.setAttribute('aria-selected', String(item === tab));
+    item.tabIndex = item === tab ? 0 : -1;
+  });
   panels.forEach(panel => { panel.hidden = panel.id !== tab.dataset.tab; });
 }
 
@@ -55,10 +92,25 @@ function renderHistory(state) {
     select.disabled = true;
     return;
   }
+  const historicalCounts = state.history.slice(1).reduce((counts, item) => {
+    const key = `${item.source_brief_revision}:${item.content_revision}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+    return counts;
+  }, new Map());
+  const historicalSeen = new Map();
   state.history.forEach((item, index) => {
     const option = document.createElement('option');
     option.value = item.package_id;
-    option.textContent = `Brief v${item.source_brief_revision}.0 · 内容 r${item.content_revision} · ${item.lifecycle_status}${index === 0 ? ' · 最新生成' : ''}`;
+    const key = `${item.source_brief_revision}:${item.content_revision}`;
+    const duplicateCount = historicalCounts.get(key) || 0;
+    let stateLabel = '当前';
+    if (index > 0) {
+      const occurrence = (historicalSeen.get(key) || 0) + 1;
+      historicalSeen.set(key, occurrence);
+      stateLabel = duplicateCount > 1 ? `历史 ${occurrence}/${duplicateCount}` : '历史';
+    }
+    option.textContent = `Brief v${item.source_brief_revision}.0 · r${item.content_revision} · ${stateLabel}`;
+    option.title = `Brief v${item.source_brief_revision}.0 · 内容修订 r${item.content_revision} · ${item.lifecycle_status}`;
     option.selected = item.package_id === state.selected_package_id;
     select.append(option);
   });
@@ -87,7 +139,7 @@ function renderClarifications(questions) {
     answer.textContent = question.answer ? `生成时记录：${question.answer}` : '生成时没有已记录回答。';
     content.append(title, answer);
     const field = document.createElement('small');
-    field.textContent = `关联字段 · ${question.field_name}`;
+    field.textContent = `关联字段 · ${briefFieldLabels[question.field_name] || '一般事项'}`;
     article.append(status, content, field);
     sheet.append(article);
   });
@@ -125,6 +177,10 @@ function renderDrafts(packageData) {
     textarea.className = 'english-copy';
     textarea.value = draft.body;
     textarea.dataset.channel = draft.channel;
+    textarea.addEventListener('input', () => {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    });
     label.append(textarea);
 
     const translation = document.createElement('div');
@@ -146,6 +202,8 @@ function renderDrafts(packageData) {
     detail.textContent = `CTA：${draft.call_to_action} · 画面：${draft.visual_direction}`;
     card.append(header, label, translation, detail);
     container.append(card);
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
   });
   document.querySelector('#translation-warning').hidden = !hasPendingTranslation;
 }
@@ -153,7 +211,10 @@ function renderDrafts(packageData) {
 function render(state) {
   delivery = state;
   const liveMode = state.mode === 'live_ai';
-  document.querySelector('#mode-tag').textContent = liveMode ? '实时 AI 工作稿 · 服务端生成' : '本地固定测试交付物 · 未调用 AI';
+  const modeTag = document.querySelector('#mode-tag');
+  modeTag.dataset.fullLabel = liveMode ? '实时 AI · LIVE AI' : '本地固定测试 · LOCAL FIXTURE';
+  modeTag.dataset.compactLabel = liveMode ? '实时 AI' : '本地测试';
+  renderModeTag();
   document.querySelector('#mode-eyebrow').textContent = `03 / DELIVER · ${liveMode ? 'LIVE AI' : 'LOCAL FIXTURE'}`;
   document.querySelector('#generate-deliver').textContent = liveMode ? '调用 AI 生成新稿' : '生成新测试稿';
   document.querySelector('#footer-mode').textContent = `${liveMode ? '实时 AI 工作稿' : '本地固定测试数据'} · 不代表客户批准`;
@@ -234,6 +295,8 @@ document.querySelector('#package-history').addEventListener('change', async even
 });
 
 document.querySelector('#generate-deliver').addEventListener('click', async () => {
+  if (requestInFlight || !delivery?.can_generate) return;
+  setBusy(true);
   try {
     if (delivery?.mode === 'live_ai' && !window.confirm('这将通过服务端调用真实 OpenAI API，可能产生费用。是否继续生成？')) return;
     const state = await api('/api/deliver/generate', {method: 'POST'});
@@ -241,11 +304,13 @@ document.querySelector('#generate-deliver').addEventListener('click', async () =
     render(state);
     showToast(`${state.mode === 'live_ai' ? '新的 AI 工作稿' : '新的本地固定测试稿'}已生成；旧稿继续保留。`);
   } catch (error) { showToast(error.message); }
+  finally { setBusy(false); }
 });
 
 document.querySelector('#channel-drafts').addEventListener('change', async event => {
   const textarea = event.target.closest('.english-copy');
-  if (!textarea || !delivery?.package) return;
+  if (!textarea || !delivery?.package || requestInFlight) return;
+  setBusy(true);
   try {
     const state = await api('/api/deliver/draft', {
       method: 'PATCH',
@@ -254,6 +319,7 @@ document.querySelector('#channel-drafts').addEventListener('change', async event
     render(state);
     showToast('英文正文已保存；审核失效，中文释义已标记待更新。');
   } catch (error) { showToast(`保存失败：${error.message}`); }
+  finally { setBusy(false); }
 });
 
 async function updateReview(status) {
@@ -265,17 +331,29 @@ async function updateReview(status) {
 }
 
 document.querySelector('#review-status').addEventListener('change', async event => {
+  if (requestInFlight) return;
+  setBusy(true);
   try { await updateReview(event.target.value); showToast('内部审核状态已保存，不代表客户批准。'); }
   catch (error) { render(delivery); showToast(error.message); }
+  finally { setBusy(false); }
 });
 
 document.querySelector('#mark-reviewed').addEventListener('click', async () => {
+  if (requestInFlight) return;
+  setBusy(true);
   try { await updateReview('内部审核完成'); showToast('当前内容修订已完成内部审核，不代表客户批准。'); }
   catch (error) { showToast(error.message); }
+  finally { setBusy(false); }
 });
 
-document.querySelector('#export-package').addEventListener('click', () => document.querySelector('#export-dialog').showModal());
-document.querySelector('#cancel-export').addEventListener('click', () => document.querySelector('#export-dialog').close());
+document.querySelector('#export-package').addEventListener('click', event => {
+  exportDialogTrigger = event.currentTarget;
+  exportDialog.showModal();
+});
+document.querySelector('#cancel-export').addEventListener('click', closeExportDialog);
+exportDialog.addEventListener('close', () => {
+  if (exportDialogTrigger?.isConnected) exportDialogTrigger.focus();
+});
 
 async function downloadExport(format) {
   if (!delivery?.package) return;
@@ -291,7 +369,7 @@ async function downloadExport(format) {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob); link.download = filename; link.click();
     URL.revokeObjectURL(link.href);
-    document.querySelector('#export-dialog').close();
+    closeExportDialog();
     showToast(`${format === 'json' ? 'JSON' : 'Markdown'} 已由 Python 后端生成。`);
   } catch (error) { showToast(error.message); }
 }

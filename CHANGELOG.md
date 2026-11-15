@@ -12,7 +12,7 @@
 - 保留旧交付包；关键 Brief 变化后将关联 current 稿标记为 stale。
 - 增加内容修订、内部审核失效和中文释义待更新规则。
 - Markdown / JSON 由后端按选定交付包生成，并保留版本、状态、未解决事项与风险提示。
-- 增加 51 项自动化测试；fixture 流程不调用收费模型，live AI 边界使用 Mock。
+- 增加 63 项自动化测试；fixture 流程不调用收费模型，live AI 边界使用 Mock。
 
 ## AI Integration 04
 
@@ -22,7 +22,7 @@
 - API Key 只从服务端进程环境读取；前端不会接收密钥。
 - 缺失密钥、调用失败或响应校验失败时返回明确错误，不静默降级为 fixture。
 - AI 失败不会清除原始输入、已保存 Brief 或已有交付包。
-- 本阶段仅完成适配代码和 Mock 测试；没有宣称真实模型端到端验证通过。
+- 适配完成后曾执行一次受控真实 AI Capture → Clarify → Deliver → Markdown / JSON 导出验证；最近的响应式 UI 修改后尚未重新执行真实 AI 全流程回归。
 
 ## Integration 03
 
